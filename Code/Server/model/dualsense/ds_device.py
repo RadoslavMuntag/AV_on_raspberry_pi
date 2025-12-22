@@ -3,11 +3,13 @@ import threading
 import time
 
 class DualSense:
-    def __init__(self, car):
+    def __init__(self, car, mode_callback=None):
         self.car = car
+        self.mode_callback = mode_callback
         self.device = None
         self.running = False
         self.thread = None
+        self.manual_mode = True  # Start in manual mode
         # Servo angles for incremental control
         self.servo_angles = [90, 140, 90]  # Initial angles for servos 0, 1, 2
         self.servo_step = 5  # Degrees to change per D-pad press
@@ -59,7 +61,21 @@ class DualSense:
                         self._handle_dpad_x(event.value)
                     elif event.code == evdev.ecodes.ABS_HAT0Y:
                         self._handle_dpad_y(event.value)
+                elif event.type == evdev.ecodes.EV_KEY:
+                    # Handle button presses
+                    if event.value == 1:  # Button pressed (not released)
+                        if event.code == evdev.ecodes.BTN_SOUTH:  # X button
+                            if self.mode_callback:
+                                self.mode_callback(1)  # Manual mode
+                        elif event.code == evdev.ecodes.BTN_WEST:  # Square button
+                            if self.mode_callback:
+                                self.mode_callback(2)  # Ultrasonic mode
+                        elif event.code == evdev.ecodes.BTN_EAST:  # Circle button
+                            if self.mode_callback:
+                                self.mode_callback(3)  # Infrared mode
 
+        except OSError:
+            pass  # Expected when device is closed
         except Exception as e:
             print(f"Error reading controller: {e}")
 
@@ -82,6 +98,9 @@ class DualSense:
         self.on_r2_value_changed(value)
 
     def joystick(self, stateX, stateY):
+        if not self.manual_mode:
+            return  # Only control motors in manual mode
+
         # Convert from evdev range (0-255, center 128) to normalized (-1 to 1)
         center = 128.0
         max_range = 128.0
@@ -148,12 +167,12 @@ class DualSense:
     def on_btn_BackWard(self, value):
         self.car.motor.setMotorModel(-value, -value)
 
-    def on_btn_Turn_Right(self, value):
-        self.car.motor.setMotorModel(value, -value)
+    def set_manual_mode(self, manual):
+        self.manual_mode = manual
 
     def close(self):
         self.running = False
         if self.device:
             self.device.close()
-        if self.thread and self.thread.is_alive():
+        if self.thread and self.thread.is_alive() and self.thread != threading.current_thread():
             self.thread.join(timeout=1.0)

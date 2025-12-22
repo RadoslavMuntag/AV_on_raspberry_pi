@@ -35,7 +35,7 @@ class mywindow:
         self.command = Command()                       # Initialize the command object
         self.led = Led()                               # Initialize the LED object
         self.car = Car()                               # Initialize the car object
-        self.dualsense = DualSense(self.car)           # Initialize the DualSense controller
+        self.dualsense = DualSense(self.car, self.set_car_mode)           # Initialize the DualSense controller
         self.dualsense_connected = self.dualsense.init()  # Try to connect DualSense
         if self.dualsense_connected:
             print("DualSense controller connected.")
@@ -70,6 +70,14 @@ class mywindow:
         if self.dualsense_connected:
             self.dualsense.close()                     # Close the DualSense controller
 
+    def set_car_mode(self, mode):
+        """Set the car mode and update manual mode for DualSense"""
+        self.car_mode = mode
+        self.car_last_mode = mode
+        if self.dualsense_connected:
+            self.dualsense.set_manual_mode(mode == 1)
+        print(f"Car mode set to {mode}")
+
     def start_server(self):
         self.tcp_server.startTcpServer()           # Start the TCP server
         self.set_threading_cmd_receive(True)       # Start the command receive thread
@@ -84,9 +92,6 @@ class mywindow:
         self.set_threading_car_task(False)         # Stop the car task thread
         self.set_process_led_running(False)        # Stop the LED process
         self.tcp_server = TankServer()             # Reinitialize the TCP server
-
-
-    # def on_pushButton_handle(self):
     #     if self.label.text() == "Server Off":
     #         self.label.setText("Server On")            # Change the label text to "Server On"
     #         self.Button_Server.setText("Off")          # Change the button text to "Off"
