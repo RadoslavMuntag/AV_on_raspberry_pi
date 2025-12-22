@@ -1,7 +1,7 @@
 import socket  # Import the socket module
 import fcntl  # Import the fcntl module
 import struct  # Import the struct module
-from tcp_server import TCPServer  # Import the TCPServer class from tcp_server module
+from model.server.tcp_server import TCPServer  # Import the TCPServer class from tcp_server module
 
 class TankServer:
     def __init__(self):

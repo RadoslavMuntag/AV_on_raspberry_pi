@@ -1,5 +1,5 @@
 def test_Parameter():
-    from parameter import ParameterManager               # Import the ParameterManager class from the parameter module
+    from model.server.parameter import ParameterManager               # Import the ParameterManager class from the parameter module
     manager = ParameterManager()                         # Initialize the ParameterManager instance
     if manager.file_exists("params.json") and manager.validate_params("params.json"):  # Check if the params.json file exists and is valid
         pcb_version = manager.get_pcb_version()          # Get the PCB version
@@ -8,7 +8,7 @@ def test_Parameter():
         print(f"Raspberry PI version is {'less than 5' if pi_version == 1 else '5'}.")  # Print the Raspberry Pi version
 
 def test_Led():
-    from led import Led                        # Import the Led class from the led module
+    from model.misc.led import Led                        # Import the Led class from the led module
     import time                                # Import the time module for sleep functionality
     print('Program is starting ... ')          # Print a start message
     led = Led()                                # Initialize the Led instance
@@ -40,7 +40,7 @@ def test_Led():
         print("\nEnd of program")              # Print an end message
 
 def test_Motor():
-    from motor import tankMotor              # Import the tankMotor class from the motor module
+    from model.actuators.motor import tankMotor              # Import the tankMotor class from the motor module
     import time                              # Import the time module for sleep functionality
     print('Program is starting ... ')        # Print a start message
     PWM = tankMotor()                        # Initialize the tankMotor instance
@@ -64,7 +64,7 @@ def test_Motor():
         print("\nEnd of program")            # Print an end message
 
 def test_Ultrasonic():
-    from ultrasonic import Ultrasonic                              # Import the Ultrasonic class from the ultrasonic module
+    from model.sensors.ultrasonic import Ultrasonic                              # Import the Ultrasonic class from the ultrasonic module
     import time                                                    # Import the time module for sleep functionality
     print('Program is starting ... ')                              # Print a start message
     ultrasonic = Ultrasonic()                                      # Initialize the Ultrasonic instance
@@ -77,7 +77,7 @@ def test_Ultrasonic():
         print("\nEnd of program")                                  # Print an end message
 
 def test_Infrared():
-    from infrared import Infrared      # Import the Infrared class from the infrared module
+    from model.sensors.infrared import Infrared      # Import the Infrared class from the infrared module
     import time                        # Import the time module for sleep functionality
     print('Program is starting ... ')  # Print a start message
     infrared = Infrared()              # Initialize the Infrared instance
@@ -100,7 +100,7 @@ def test_Infrared():
         print("\nEnd of program")      # Print an end message
 
 def test_Servo():
-    from servo import Servo            # Import the Servo class from the servo module
+    from model.actuators.servo import Servo            # Import the Servo class from the servo module
     import time                        # Import the time module for sleep functionality
     print('Program is starting ... ')  # Print a start message
     servo = Servo()                    # Initialize the Servo instance
@@ -125,7 +125,7 @@ def test_Servo():
 
 def test_Camera():
     import time
-    from camera import Camera         # Import the Camera class from the camera module
+    from model.sensors.camera import Camera         # Import the Camera class from the camera module
     print("test camera")              # Print a test message
     camera = Camera()                 # Initialize the Camera instance
     camera.start_image()              # Start the camera

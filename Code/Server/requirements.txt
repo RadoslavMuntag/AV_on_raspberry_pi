@@ -1,0 +1,7 @@
+gpiozero
+picamera2
+rpi-ws281x
+spidev
+numpy
+rpi-hardware-pwm
+evdev

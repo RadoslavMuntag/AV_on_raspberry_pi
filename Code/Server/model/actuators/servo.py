@@ -98,7 +98,7 @@ class HardwareServo:
             duty = self.map(angle, 0, 180, 2.5, 12.5)  # Map angle to duty cycle
             self.setServoDuty(channel, duty)  # Set duty cycle for GPIO 13
 
-from parameter import ParameterManager
+from model.server.parameter import ParameterManager
 class Servo:
     def __init__(self):
         # Initialize the Servo instance

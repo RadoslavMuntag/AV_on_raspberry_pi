@@ -1,8 +1,8 @@
 # Import necessary modules
 import time
-from parameter import ParameterManager
-from rpi_ledpixel import Freenove_RPI_WS281X
-from spi_ledpixel import Freenove_SPI_LedPixel
+from model.server.parameter import ParameterManager
+from model.misc.rpi_ledpixel import Freenove_RPI_WS281X
+from model.misc.spi_ledpixel import Freenove_SPI_LedPixel
 
 # Define the Led class to manage LED strip functionality
 class Led:

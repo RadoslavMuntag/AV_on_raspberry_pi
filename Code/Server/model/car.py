@@ -1,8 +1,8 @@
 # Import necessary modules for ultrasonic sensor, motor control, servo control, and infrared sensor
-from ultrasonic import Ultrasonic
-from motor import tankMotor
-from servo import Servo
-from infrared import Infrared
+from model.sensors.ultrasonic import Ultrasonic
+from model.actuators.motor import tankMotor
+from model.actuators.servo import Servo
+from model.sensors.infrared import Infrared
 import time
 
 # Define the Car class to manage all components and functionalities

@@ -1,5 +1,5 @@
 # Import the ParameterManager class for managing configuration parameters
-from parameter import ParameterManager
+from model.server.parameter import ParameterManager
 # Import the LineSensor class from gpiozero for reading infrared sensors
 from gpiozero import LineSensor
 
