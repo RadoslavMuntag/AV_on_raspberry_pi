@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import time
 from typing import Optional
 
+from .config import FusionConfig
 from ..contracts import PerceptionFrame, WorldState, SensorType
-
-
-@dataclass(slots=True)
-class FusionConfig:
-    obstacle_threshold_cm: float = 25.0
-    max_sensor_age_s: float = 0.25
-
 
 class FusionModule:
     def __init__(self, cfg: Optional[FusionConfig] = None) -> None:

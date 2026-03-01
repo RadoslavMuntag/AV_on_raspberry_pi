@@ -1,17 +1,10 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Optional
 
+from .config import PlannerConfig
 from ..contracts import BehaviorState, PlannerDecision, WorldState, BehaviorState
-
-
-@dataclass(slots=True)
-class PlannerConfig:
-    cruise_speed: float = 0.35
-    avoid_turn: float = 0.6
-
 
 class BehaviorPlanner:
     def __init__(self, cfg: Optional[PlannerConfig] = None) -> None:

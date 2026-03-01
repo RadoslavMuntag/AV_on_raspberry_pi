@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Optional
 
+from .config import PerceptionConfig
 from ..contracts import PerceptionFrame, InfraredState
 from ..services.hardware import VehicleHardware
 
-@dataclass(slots=True)
-class PerceptionConfig:
-    obstacle_threshold_cm: float = 25.0
 
 class PerceptionModule:
     def __init__(self, cfg: Optional[PerceptionConfig] = None) -> None:
@@ -24,13 +21,13 @@ class PerceptionModule:
             return None, 0.0
 
         # Example weight model for 3 sensors (right->left) 
-        # Adjust if your bit ordering differs on your hardware.
         weights = [1.0, 0.0, -1.0]  # IR1=right, IR2=center, IR3=left
         bits = [(raw >> i) & 1 for i in range(3)]
 
         if __name__ == "__main__":
             for i, b in enumerate(bits):
-                print(f"IR{i+1}: {'ON' if b else 'OFF'}")  # Debug print for sensor states only when running this module directly
+                # Debug print for sensor states only when running this module directly
+                print(f"IR{i+1}: {'ON' if b else 'OFF'}") 
 
         active = [i for i, b in enumerate(bits) if b == 1]
         if not active:

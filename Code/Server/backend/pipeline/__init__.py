@@ -1,1 +1,1 @@
-""""""
+"""Pipeline module for the backend."""

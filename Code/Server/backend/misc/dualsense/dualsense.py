@@ -1,12 +1,12 @@
 import evdev
 import threading
 
-
-from model.car import Car
+from services.hardware import VehicleHardware
+from contracts import BehaviorState
 
 class DualSense:
-    def __init__(self, car: Car, mode_callback=None):
-        self.car: Car  = car
+    def __init__(self, hardware: VehicleHardware, mode_callback=None):
+        self.hardware: VehicleHardware  = hardware
         self.mode_callback = mode_callback # Callback to notify mode changes (manual, ultrasonic, infrared)
         self.device: evdev.InputDevice | None = None
         self.running = False
@@ -68,13 +68,13 @@ class DualSense:
                     if event.value == 1:  # Button pressed (not released)
                         if event.code == evdev.ecodes.BTN_SOUTH:  # X button
                             if self.mode_callback:
-                                self.mode_callback(1)  # Manual mode
+                                self.mode_callback(BehaviorState.MANUAL)
                         elif event.code == evdev.ecodes.BTN_WEST:  # Square button
                             if self.mode_callback:
-                                self.mode_callback(2)  # Ultrasonic mode
+                                self.mode_callback(BehaviorState.OBSTACLE_AVOID)
                         elif event.code == evdev.ecodes.BTN_EAST:  # Circle button
                             if self.mode_callback:
-                                self.mode_callback(3)  # Infrared mode
+                                self.mode_callback(BehaviorState.LINE_FOLLOW)
 
         except OSError:
             pass  # Expected when device is closed
@@ -124,7 +124,7 @@ class DualSense:
         right_motor = max(-max_speed, min(max_speed, right_motor))
 
         # Directly control motors
-        self.car.motor.setMotorModel(left_motor, right_motor)
+        self.hardware.set_motor(left_motor, right_motor)
 
     def on_l2_value_changed(self, value):
         # Scale trigger value (0-255) to motor speed (-4095 to 4095)
@@ -142,32 +142,32 @@ class DualSense:
         """Handle D-pad left/right for servo 1 (horizontal movement)"""
         if value == -1:  # Left pressed
             self.servo_angles[1] = min(150, self.servo_angles[1] + self.servo_step)
-            self.car.servo.setServoAngle(1, self.servo_angles[1])
+            self.hardware.set_servo(1, self.servo_angles[1])
             print(f"Servo 1 (horizontal): {self.servo_angles[1]}°")
         elif value == 1:  # Right pressed
             self.servo_angles[1] = max(90, self.servo_angles[1] - self.servo_step)
-            self.car.servo.setServoAngle(1, self.servo_angles[1])
+            self.hardware.set_servo(1, self.servo_angles[1])
             print(f"Servo 1 (horizontal): {self.servo_angles[1]}°")
 
     def _handle_dpad_y(self, value):
         """Handle D-pad up/down for servo 0 (vertical movement)"""
         if value == -1:  # Up pressed
             self.servo_angles[0] = min(150, self.servo_angles[0] + self.servo_step)
-            self.car.servo.setServoAngle(0, self.servo_angles[0])
+            self.hardware.set_servo(0, self.servo_angles[0])
             print(f"Servo 0 (vertical): {self.servo_angles[0]}°")
         elif value == 1:  # Down pressed
             self.servo_angles[0] = max(90, self.servo_angles[0] - self.servo_step)
-            self.car.servo.setServoAngle(0, self.servo_angles[0])
+            self.hardware.set_servo(0, self.servo_angles[0])
             print(f"Servo 0 (vertical): {self.servo_angles[0]}°")
 
     def on_btn_ForWard(self, value):
-        self.car.motor.setMotorModel(value, value)
+        self.hardware.set_motor(value, value)
 
     def on_btn_Turn_Left(self, value):
-        self.car.motor.setMotorModel(value, -value)
+        self.hardware.set_motor(value, -value)
 
     def on_btn_BackWard(self, value):
-        self.car.motor.setMotorModel(-value, -value)
+        self.hardware.set_motor(-value, -value)
 
     def set_manual_mode(self, manual):
         self.manual_mode = manual

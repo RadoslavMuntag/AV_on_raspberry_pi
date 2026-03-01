@@ -4,11 +4,16 @@ from typing import Optional
 
 
 class VehicleHardware:
+    """A wrapper around the old hardware interface. 
+    The main purpose is to isolate key hardware interactions 
+    and provide a clean API for the pipeline modules.
+    """
+
     def __init__(self) -> None:
         self._car = None
         self._camera = None
         self._led = None
-        self._ready = False
+        self._ready: bool = False
         self._error: Optional[str] = None
 
     @property
@@ -25,9 +30,9 @@ class VehicleHardware:
             from model.misc.led import Led
             from model.sensors.camera import Camera
 
-            self._car = Car()
-            self._led = Led()
-            self._camera = Camera(stream_size=(400, 300))
+            self._car: Car = Car()
+            self._led: Led = Led()
+            self._camera: Camera = Camera(stream_size=(400, 300))
             self._ready = True
             self._error = None
         except Exception as exc:
@@ -71,14 +76,17 @@ class VehicleHardware:
             self._car.motor.setMotorModel(0, 0)
 
     def set_motor(self, left: int, right: int) -> None:
+        """Set motor speeds. Expects values in range [-4095, 4095]. Positive is forward."""
         if self._car:
             self._car.motor.setMotorModel(left, right)
 
     def set_servo(self, index: int, angle: int) -> None:
+        """Set servo angle. Expects index in [0, 2] and angle in [0, 180]."""
         if self._car:
             self._car.servo.setServoAngle(index, angle)
 
     def set_led(self, mode: str, r: int, g: int, b: int, index: int) -> None:
+        """Set LED mode and color. Mode can be 'off', 'index', 'blink', 'breathing', or 'rainbow'."""
         if not self._led:
             return
         if mode == "off":
@@ -94,6 +102,7 @@ class VehicleHardware:
             self._led.rainbowCycle()
 
     def read_ultrasonic(self) -> Optional[float]:
+        """Returns distance in cm, or None if error."""
         if self._car:
             try:
                 return float(self._car.sonic.get_distance())
@@ -102,17 +111,10 @@ class VehicleHardware:
         return None
 
     def read_infrared(self) -> Optional[int]:
+        """Returns raw 3-bit pattern from IR sensors, or None if error."""
         if self._car:
             try:
                 return int(self._car.infrared.read_all_infrared())
             except Exception:
                 return None
         return None
-
-    def run_line_follow_step(self) -> None:
-        if self._car:
-            self._car.mode_infrared()
-
-    def run_obstacle_avoid_step(self) -> None:
-        if self._car:
-            self._car.mode_ultrasonic()

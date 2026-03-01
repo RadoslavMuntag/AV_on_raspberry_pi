@@ -8,6 +8,7 @@ from .hardware import VehicleHardware
 from .state import StateStore
 from ..pipeline.pipeline import ModularPipeline
 from ..contracts import BehaviorState, ManualCommand
+from ...model.dualsense.ds_device import DualSense
 
 class RuntimeManager:
     def __init__(self, state_store: StateStore, hardware: VehicleHardware) -> None:
@@ -18,6 +19,9 @@ class RuntimeManager:
         self._running = False
         self._telemetry_task: Optional[asyncio.Task] = None
         self._control_task: Optional[asyncio.Task] = None
+        
+        self._dualsense: Optional[DualSense] = None
+        self._dualsense_connected = False
 
     async def start(self) -> None:
         self.hardware.start()
@@ -32,8 +36,15 @@ class RuntimeManager:
             except Exception as exc:
                 self.state_store.update_state(camera_streaming=False, hardware_error=str(exc))
         self._running = True
-        self._telemetry_task = asyncio.create_task(self._telemetry_loop())
+        self._telemetry_task = asyncio.create_task(self._telemetry_loop()) 
         self._control_task = asyncio.create_task(self._control_loop())
+
+        self._dualsense = DualSense(self.hardware, self.set_car_mode)           # Initialize the DualSense controller
+        self._dualsense_connected = self._dualsense.init()  # Try to connect DualSense
+        if self._dualsense_connected:
+            print("DualSense controller connected.")
+        else:
+            print("DualSense controller not found. Continuing without controller.")
 
     async def stop(self) -> None:
         self._running = False
@@ -109,6 +120,12 @@ class RuntimeManager:
             right_motor=right,
         )
         return True
+    
+    def set_car_mode(self, mode: BehaviorState) -> None:
+        """Called by DualSense handler to switch between manual and autonomous mode."""
+        if mode == BehaviorState.MANUAL:
+            self.state_store.update_state(e_stop=False)
+        self.state_store.update_state(mode=mode)
 
     async def _telemetry_loop(self) -> None:
         while self._running:

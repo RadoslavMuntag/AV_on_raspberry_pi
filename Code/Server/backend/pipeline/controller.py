@@ -1,18 +1,10 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Optional
 
+from .config import ControlConfig
 from ..contracts import BehaviorState, ControlTargets, ManualCommand, PlannerDecision, WorldState
-
-
-@dataclass(slots=True)
-class ControlConfig:
-    max_pwm: int = 2500
-    line_kp: float = 0.7
-    min_confidence: float = 0.15
-
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
