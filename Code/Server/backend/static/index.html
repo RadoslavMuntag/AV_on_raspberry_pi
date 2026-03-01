@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tank AV Control</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+  <div class="wrap">
+    <h2>Tank AV Local Interface</h2>
+    <div class="grid">
+      <div class="card">
+        <img src="/video/mjpeg" alt="video stream" />
+      </div>
+      <div class="card">
+        <div class="row">
+          <input id="clientId" placeholder="client id" value="web-local" />
+          <button onclick="acquire()">Acquire</button>
+          <button onclick="releaseCtrl()">Release</button>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <select id="modeSel">
+            <option value="idle">idle</option>
+            <option value="manual">manual</option>
+            <option value="line_follow">line_follow</option>
+            <option value="obstacle_avoid">obstacle_avoid</option>
+            <option value="safe_stop">safe_stop</option>
+          </select>
+          <button onclick="setMode()">Set Mode</button>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <input id="left" type="number" value="0" />
+          <input id="right" type="number" value="0" />
+          <button onclick="drive()">Drive</button>
+          <button onclick="stopNow()">Stop</button>
+        </div>
+        <div style="margin-top:10px;">
+          <strong>State</strong>
+          <pre id="state">waiting...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>

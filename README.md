@@ -29,6 +29,18 @@ The primary objective of this project is to explore and implement self-driving v
 
 This project is based on the open-source Freenove Tank Robot Kit. Special thanks to Freenove for providing the hardware platform and initial codebase.
 
+## IMPORTANT
+
+If using a virtual enviroment for running the server and have - ModuleNotFoundError: No module named 'libcamera' - error
+
+run:
+```
+/usr/bin/python3 -m venv --system-site-packages .venv
+
+(.venv is the name of your virtual enviroment folder)
+```
+
+
 ## License
 
 This project inherits the license from the original Freenove repository: [Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License](http://creativecommons.org/licenses/by-nc-sa/3.0/).

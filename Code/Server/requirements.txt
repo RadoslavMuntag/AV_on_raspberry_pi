@@ -5,3 +5,6 @@ spidev
 numpy
 rpi-hardware-pwm
 evdev
+fastapi
+uvicorn
+uvicorn[standard]

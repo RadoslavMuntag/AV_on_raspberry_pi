@@ -30,7 +30,11 @@ class Infrared:
         self.IR02_sensor = LineSensor(self.IR02)
         self.IR03_sensor = LineSensor(self.IR03)
 
-    def read_one_infrared(self, channel):
+    def read_precise_infrared(self) -> tuple[float, float, float]:
+        # Return the values of all three sensors as a tuple of floats (0.0 or 1.0)
+        return (self.IR01_sensor.value, self.IR02_sensor.value, self.IR03_sensor.value)
+
+    def read_one_infrared(self, channel) -> int:
         # Return 1 if the sensor value is True, otherwise return 0
         if channel == 1:
             return 1 if self.IR01_sensor.value else 0
@@ -39,7 +43,7 @@ class Infrared:
         elif channel == 3:
             return 1 if self.IR03_sensor.value else 0
 
-    def read_all_infrared(self):
+    def read_all_infrared(self) -> int:
         # Combine the values of all three sensors into a single integer
         return (self.read_one_infrared(1) << 2) | (self.read_one_infrared(2) << 1) | self.read_one_infrared(3)
 

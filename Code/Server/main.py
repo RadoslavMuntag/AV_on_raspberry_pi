@@ -15,20 +15,9 @@ from model.dualsense.ds_device import DualSense                                 
 
 class mywindow:
     def __init__(self):
-        # self.app = QApplication(sys.argv)              # Initialize the QApplication with command-line arguments
-        # super(mywindow, self).__init__()               # Call the superclass constructor
-        # self.setupUi(self)                             # Set up the user interface
-        # self.ui_button_state = True                    # Initialize the UI button state
         self.config_task()                             # Configure tasks
-        # self.Button_Server.clicked.connect(self.on_pushButton_handle)  # Connect the button click event to the handler
-        # if self.ui_button_state:
-        #     self.on_pushButton_handle()                                # Handle the button click if the UI button state is True
-        # self.app.lastWindowClosed.connect(self.close_application)      # Connect the last window closed event to the close application method
         signal.signal(signal.SIGINT, self.signal_handler)              # Set up a signal handler for SIGINT (Ctrl+C)
         
-        # self.timer = QTimer(self)                       # Create a QTimer object
-        # self.timer.timeout.connect(self.check_signals)  # Connect the timer timeout event to the check signals method
-        # self.timer.start(100)                           # Start the timer with an interval of 100 milliseconds
 
     def config_task(self):
         self.tcp_server = TankServer()                 # Initialize the TCP server
@@ -86,29 +75,12 @@ class mywindow:
         self.set_process_led_running(True)         # Start the LED process
 
     def stop_server(self):
-        self.tcp_server.stopTcpServer()            # Stop the TCP server
+        self.tcp_server.stopTcpServer()            # Stop the TCP server2
         self.set_threading_cmd_receive(False)      # Stop the command receive thread
         self.set_threading_video_send(False)       # Stop the video send thread
         self.set_threading_car_task(False)         # Stop the car task thread
         self.set_process_led_running(False)        # Stop the LED process
         self.tcp_server = TankServer()             # Reinitialize the TCP server
-    #     if self.label.text() == "Server Off":
-    #         self.label.setText("Server On")            # Change the label text to "Server On"
-    #         self.Button_Server.setText("Off")          # Change the button text to "Off"
-    #         self.tcp_server.startTcpServer()           # Start the TCP server
-    #         self.set_threading_cmd_receive(True)       # Start the command receive thread
-    #         self.set_threading_video_send(True)        # Start the video send thread
-    #         self.set_threading_car_task(True)          # Start the car task thread
-    #         self.set_process_led_running(True)         # Start the LED process
-    #     elif self.label.text() == 'Server On':
-    #         self.label.setText("Server Off")           # Change the label text to "Server Off"
-    #         self.Button_Server.setText("On")           # Change the button text to "On"
-    #         self.tcp_server.stopTcpServer()            # Stop the TCP server
-    #         self.set_threading_cmd_receive(False)      # Stop the command receive thread
-    #         self.set_threading_video_send(False)       # Stop the video send thread
-    #         self.set_threading_car_task(False)         # Stop the car task thread
-    #         self.set_process_led_running(False)        # Stop the LED process
-    #         self.tcp_server = TankServer()             # Reinitialize the TCP server
 
     def set_threading_cmd_receive(self, state, close_time=0.3):
         if self.cmd_thread is None:
