@@ -2,31 +2,34 @@ from __future__ import annotations
 
 import asyncio
 import time
+import threading
 from typing import Optional
 
 from .hardware import VehicleHardware
 from .state import StateStore
 from ..pipeline.pipeline import ModularPipeline
 from ..contracts import BehaviorState, ManualCommand
-from ...model.dualsense.ds_device import DualSense
+from ..misc.dualsense.dualsense import DualSense
 
 class RuntimeManager:
     def __init__(self, state_store: StateStore, hardware: VehicleHardware) -> None:
-        self.state_store = state_store
-        self.hardware = hardware
+        self.state_store : StateStore = state_store
+        self.hardware : VehicleHardware = hardware
         self.pipeline = ModularPipeline()
+
         self._manual_cmd = ManualCommand()
+        self._manual_cmd_lock = threading.Lock()
+
         self._running = False
         self._telemetry_task: Optional[asyncio.Task] = None
         self._control_task: Optional[asyncio.Task] = None
         
         self._dualsense: Optional[DualSense] = None
-        self._dualsense_connected = False
 
     async def start(self) -> None:
         self.hardware.start()
         self.state_store.update_state(
-            hardware_ready=self.hardware.ready,
+        hardware_ready=self.hardware.ready,
             hardware_error=self.hardware.error,
         )
         if self.hardware.ready:
@@ -39,12 +42,21 @@ class RuntimeManager:
         self._telemetry_task = asyncio.create_task(self._telemetry_loop()) 
         self._control_task = asyncio.create_task(self._control_loop())
 
-        self._dualsense = DualSense(self.hardware, self.set_car_mode)           # Initialize the DualSense controller
-        self._dualsense_connected = self._dualsense.init()  # Try to connect DualSense
-        if self._dualsense_connected:
+        self.connect_dualsense_task = self.connect_dualsense()
+
+    def connect_dualsense(self) -> bool:
+        if not self._dualsense:
+            self._dualsense = DualSense(self.state_store, self.submit_manual_command)
+        if self._dualsense.is_connected():
+            print("DualSense already connected.")
+            return True
+        self._dualsense.init()
+        if self._dualsense.is_connected():
             print("DualSense controller connected.")
+            return True
         else:
             print("DualSense controller not found. Continuing without controller.")
+            return False
 
     async def stop(self) -> None:
         self._running = False
@@ -110,9 +122,10 @@ class RuntimeManager:
         throttle = (left + right) / (2.0 * max_speed)
         steer = (right - left) / (2.0 * max_speed)
 
-        self._manual_cmd.throttle = max(-1.0, min(1.0, throttle))
-        self._manual_cmd.steer = max(-1.0, min(1.0, steer))
-        self._manual_cmd.active = True
+        with self._manual_cmd_lock:
+            self._manual_cmd.throttle = max(-1.0, min(1.0, throttle))
+            self._manual_cmd.steer = max(-1.0, min(1.0, steer))
+            self._manual_cmd.active = True
 
         self.state_store.update_state(
             controller_last_seen=time.time(),
@@ -126,6 +139,16 @@ class RuntimeManager:
         if mode == BehaviorState.MANUAL:
             self.state_store.update_state(e_stop=False)
         self.state_store.update_state(mode=mode)
+    
+    def submit_manual_command(self, cmd: ManualCommand) -> None:
+        """Called by DualSense handler to submit manual driving commands."""
+        with self._manual_cmd_lock:
+            # copy to avoid external mutation/races
+            self._manual_cmd = ManualCommand(
+                throttle=cmd.throttle,
+                steer=cmd.steer,
+                active=cmd.active,
+            )
 
     async def _telemetry_loop(self) -> None:
         while self._running:
@@ -146,7 +169,8 @@ class RuntimeManager:
 
             timed_out = self.state_store.should_timeout_controller()
             if timed_out:
-                self._manual_cmd = ManualCommand()  # reset manual input
+                with self._manual_cmd_lock:
+                    self._manual_cmd = ManualCommand()
                 self.state_store.update_state(
                     controller_id=None,
                     mode=BehaviorState.SAFE_STOP,
@@ -154,19 +178,22 @@ class RuntimeManager:
                 )
 
             requested_mode = state["mode"]
-
-            # Heartbeat is required only for manual remote driving
             heartbeat_ok = True
             if requested_mode == BehaviorState.MANUAL:
                 heartbeat_ok = (state["controller_id"] is not None) and (not timed_out)
 
-            self._manual_cmd.active = requested_mode == BehaviorState.MANUAL and heartbeat_ok
+            with self._manual_cmd_lock:
+                cmd_for_tick = ManualCommand(
+                    throttle=self._manual_cmd.throttle,
+                    steer=self._manual_cmd.steer,
+                    active=(requested_mode == BehaviorState.MANUAL and heartbeat_ok),
+                )
 
             pipe = self.pipeline.tick(
                 hardware=self.hardware,
                 requested_mode=requested_mode,
                 heartbeat_ok=heartbeat_ok and not state["e_stop"],
-                manual_cmd=self._manual_cmd,
+                manual_cmd=cmd_for_tick,
             )
 
             self.state_store.update_state(

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# TODO: Probably merge with config in state.py, idk, consider later
+
 @dataclass(slots=True)
 class PerceptionConfig:
     obstacle_threshold_cm: float = 25.0
 
 @dataclass(slots=True)
 class FusionConfig:
-    obstacle_threshold_cm: float = 25.0
+    obstacle_threshold_cm: float = 25.0 # TODO: Redundant with PerceptionConfig
     max_sensor_age_s: float = 0.25
 
 @dataclass(slots=True)

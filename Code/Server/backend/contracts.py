@@ -20,6 +20,7 @@ class InfraredState(int, Enum):
 class BehaviorState(str, Enum):
     IDLE = "idle"
     MANUAL = "manual"
+    AUTONOMOUS = "autonomous"
     LINE_FOLLOW = "line_follow"
     OBSTACLE_AVOID = "obstacle_avoid"
     SAFE_STOP = "safe_stop"
@@ -40,7 +41,7 @@ class SensorType(str, Enum):
 class ManualCommand:
     throttle: float = 0.0  # [-1.0, 1.0]
     steer: float = 0.0     # [-1.0, 1.0]
-    active: bool = False
+    active: bool = False   # TODO: Dont know if bool is needed, consider removing
 
 # ts <=> timestamp
 @dataclass(slots=True)

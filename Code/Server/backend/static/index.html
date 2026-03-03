@@ -38,6 +38,18 @@
           <button onclick="stopNow()">Stop</button>
         </div>
         <div style="margin-top:10px;">
+          <div class="row" style="margin-bottom:8px;">
+            <strong>Stream</strong>
+            <select id="feedSel">
+              <option value="telemetry">telemetry</option>
+              <option value="all">pipeline: all</option>
+              <option value="perception">pipeline: perception</option>
+              <option value="world">pipeline: world</option>
+              <option value="planner">pipeline: planner</option>
+              <option value="manual">pipeline: manual</option>
+              <option value="control">pipeline: control</option>
+            </select>
+          </div>
           <strong>State</strong>
           <pre id="state">waiting...</pre>
         </div>
@@ -45,7 +57,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
 </body>
+<script src="/static/app1.js"></script>
 
 </html>

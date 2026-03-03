@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
+from ..services.state import StateStore
 from ..services.hardware import VehicleHardware
 
 from ..contracts import ManualCommand, PerceptionFrame, PlannerDecision, ControlTargets, WorldState, BehaviorState
@@ -38,6 +40,7 @@ class ModularPipeline:
         requested_mode: BehaviorState,
         heartbeat_ok: bool,
         manual_cmd: ManualCommand,
+        state_store: Optional[StateStore] = None,
     ) -> PipelineSnapshot:
         p : PerceptionFrame = self.perception.read(hardware)
         w : WorldState = self.fusion.fuse(p)
@@ -46,5 +49,9 @@ class ModularPipeline:
 
         hardware.set_motor(u.left_pwm, u.right_pwm)
         hardware.set_led(u.led_mode, u.led_rgb[0], u.led_rgb[1], u.led_rgb[2], 0)
+
+        if state_store:
+            state_store.set_pipeline_snapshot(perception=p, world=w, decision=d, control=u)
+            state_store.set_manual_command(manual_cmd)
 
         return PipelineSnapshot(perception=p, world=w, decision=d, control=u)

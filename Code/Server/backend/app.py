@@ -24,6 +24,17 @@ from .services.hardware import VehicleHardware
 from .services.runtime import RuntimeManager
 from .services.state import StateStore
 
+class NoCacheStaticFiles(StaticFiles):
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        return False
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
 # Note: Startup/shutdown events are now handled in the lifespan context manager below, 
 # to ensure proper async handling and avoid potential issues with async tasks during startup/shutdown.
 # @app.on_event("startup")
@@ -48,7 +59,8 @@ app = FastAPI(title="Tank AV Backend", version="0.1.0", lifespan=lifespan)
 
 # Serve files from static directory
 static_root = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=static_root), name="static")
+app.mount("/static", NoCacheStaticFiles(directory=static_root), name="static")
+
 
 #---------------------
 #--- API Endpoints ---
@@ -141,3 +153,27 @@ async def ws_telemetry(websocket: WebSocket) -> None:
             await asyncio.sleep(0.2)
     except WebSocketDisconnect:
         return
+    
+@app.websocket("/ws/pipeline")
+async def ws_pipeline(websocket: WebSocket) -> None:
+    """
+    Query params:
+      - frame: all|perception|world|planner|manual|control (default: all)
+    """
+    frame = websocket.query_params.get("frame", "all")
+    valid_frames = {"all", "perception", "world", "planner", "manual", "control"}
+
+    await websocket.accept()
+    if frame not in valid_frames:
+        await websocket.close(code=1008, reason="invalid frame")
+        return
+
+    try:
+        while True:
+            payload = state_store.pipeline_snapshot(frame=frame)
+            await websocket.send_text(json.dumps(payload))
+            await asyncio.sleep(0.2)
+    except WebSocketDisconnect:
+        return
+    except Exception as e:
+        print(f"Error in ws_pipeline: {e}")

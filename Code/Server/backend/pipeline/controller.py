@@ -30,12 +30,15 @@ class DifferentialDriveController:
         now = time.monotonic()
 
         if decision.safe_stop or decision.state == BehaviorState.SAFE_STOP:
+            # Stop immediately, blink red light to indicate E-stop
             return ControlTargets(now, 0, 0, "blink", (255, 0, 0))
 
         if decision.state == BehaviorState.IDLE:
+            # No control output, no lights
             return ControlTargets(now, 0, 0, "off", (0, 0, 0))
 
         if decision.state == BehaviorState.MANUAL:
+            # If not active stop, otherwise use manual command, solid orange light
             if not manual.active:
                 return ControlTargets(now, 0, 0, "index", (255, 120, 0))
             left, right = self._mix(manual.throttle, manual.steer)
