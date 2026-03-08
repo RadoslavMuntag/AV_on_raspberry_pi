@@ -11,7 +11,7 @@ from ..contracts import BehaviorState, ManualCommand, PerceptionFrame, WorldStat
 @dataclass
 class RuntimeConfig:
     heartbeat_timeout_sec: float = 1.5
-    control_loop_hz: float = 20.0
+    control_loop_hz: float = 30.0
     max_motor_speed: int = 2800
 
 

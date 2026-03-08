@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .config import ControlConfig
+from .config import PipelineConfig
 from ..contracts import BehaviorState, ControlTargets, ManualCommand, PlannerDecision, WorldState
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -11,8 +11,19 @@ def _clamp(v: float, lo: float, hi: float) -> float:
 
 
 class DifferentialDriveController:
-    def __init__(self, cfg: Optional[ControlConfig] = None) -> None:
-        self.cfg = cfg or ControlConfig()
+    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+        self.cfg = cfg or PipelineConfig()
+
+    def _inverse_differential_kinematics(self, linear: float, angular: float) -> tuple[float, float]:
+        linear = _clamp(linear, -1.0, 1.0)
+        angular = _clamp(angular, -1.0, 1.0)
+        vl = linear - angular * self.cfg.wheel_track / 2
+        vr = linear + angular * self.cfg.wheel_track / 2
+
+        left = int(vl * self.cfg.max_pwm)
+        right = int(vr * self.cfg.max_pwm)
+
+        return left, right
 
     def _mix(self, speed: float, turn: float) -> tuple[int, int]:
         speed = _clamp(speed, -1.0, 1.0)
@@ -45,11 +56,11 @@ class DifferentialDriveController:
             return ControlTargets(now, left, right, "index", (0, 120, 255))
 
         if decision.state == BehaviorState.LINE_FOLLOW:
-            if world.lane_detected and world.lateral_confidence >= self.cfg.min_confidence:
-                turn = _clamp(self.cfg.line_kp * world.lateral_error, -1.0, 1.0)
-                left, right = self._mix(decision.desired_speed, turn)
-                return ControlTargets(now, left, right, "index", (0, 255, 0))
-            return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
+            #if world.lane_detected and world.lateral_confidence >= self.cfg.min_confidence:
+            turn = self.cfg.line_kp * world.lateral_error
+            left, right = self._mix(decision.desired_speed, turn)
+            return ControlTargets(now, left, right, "index", (0, 255, 0))
+            #return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
 
         if decision.state == BehaviorState.OBSTACLE_AVOID:
             left, right = self._mix(decision.desired_speed, decision.desired_turn)

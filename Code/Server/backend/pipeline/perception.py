@@ -3,14 +3,14 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .config import PerceptionConfig
+from .config import PipelineConfig
 from ..contracts import PerceptionFrame, InfraredState
 from ..services.hardware import VehicleHardware
-
+from .vision import detect_line_error_from_jpeg
 
 class PerceptionModule:
-    def __init__(self, cfg: Optional[PerceptionConfig] = None) -> None:
-        self.cfg = cfg or PerceptionConfig()
+    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+        self.cfg = cfg or PipelineConfig()
 
     def _decode_infrared_line(self, raw: Optional[InfraredState]) -> tuple[Optional[float], float]:
         """
@@ -21,7 +21,7 @@ class PerceptionModule:
             return None, 0.0
 
         # Example weight model for 3 sensors (right->left) 
-        weights = [1.0, 0.0, -1.0]  # IR1=right, IR2=center, IR3=left
+        weights = [-1.0, 0.0, 1.0]  # IR1=right, IR2=center, IR3=left
         bits = [(raw >> i) & 1 for i in range(3)]
 
         if __name__ == "__main__":
@@ -37,7 +37,7 @@ class PerceptionModule:
         conf = min(1.0, len(active) / 3.0)
         return err / 2.0, conf  # normalize roughly into [-1, 1]
 
-    def read(self, hardware: VehicleHardware ) -> PerceptionFrame:
+    def read(self, hardware: VehicleHardware) -> PerceptionFrame:
         ts = time.monotonic()
         faults: list[str] = []
 
@@ -49,7 +49,24 @@ class PerceptionModule:
         if infrared_raw is None:
             faults.append("infrared_unavailable")
 
-        line_error, line_conf = self._decode_infrared_line(infrared_raw)
+        # Infrared fallback
+        ir_line_error, ir_line_conf = self._decode_infrared_line(infrared_raw)
+
+        camera_frame = hardware.get_jpeg_frame()
+        cam_line_error: Optional[float] = None
+        cam_line_conf = 0.0
+        if camera_frame is None:
+            faults.append("camera_unavailable")
+        else:
+            cam_line_error, cam_line_conf = detect_line_error_from_jpeg(camera_frame)
+
+        # Prefer camera if confident; otherwise fallback to IR
+        if cam_line_error is not None and cam_line_conf >= 0.2:
+            line_error = cam_line_error
+            line_conf = cam_line_conf
+        else:
+            line_error = ir_line_error
+            line_conf = ir_line_conf
 
         return PerceptionFrame(
             ts=ts,

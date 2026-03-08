@@ -196,6 +196,15 @@ class RuntimeManager:
                 manual_cmd=cmd_for_tick,
             )
 
+            self.state_store.set_pipeline_snapshot(
+                perception=pipe.perception, 
+                world=pipe.world, 
+                decision=pipe.decision, 
+                control=pipe.control
+                )
+
+            self.state_store.set_manual_command(cmd_for_tick)
+
             self.state_store.update_state(
                 mode=pipe.decision.state.value,
                 left_motor=pipe.control.left_pwm,

@@ -119,7 +119,7 @@ class DualSense:
 
         # Normalize to -1 to 1
         linear_norm = -(stateY - center) / max_range  # Y is inverted
-        angular_norm = (stateX - center) / max_range
+        angular_norm = -(stateX - center) / max_range
     
         self.submit_manual_cmd_callback(ManualCommand(throttle=linear_norm, steer=angular_norm, active=True))     
 

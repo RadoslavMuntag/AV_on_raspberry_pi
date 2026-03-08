@@ -44,6 +44,10 @@ async function drive() {
   });
 }
 
+async function connectDualSense() {
+  await post('/api/controller/dualsense/connect', {client_id: clientId()});
+}
+
 async function stopNow() {
   document.getElementById('left').value = 0;
   document.getElementById('right').value = 0;
@@ -56,11 +60,11 @@ async function setModeSafeStop() {
 }
 
 async function heartbeat() {
-  if (currentMode !== 'manual') return;
   try {
     await post('/api/controller/heartbeat', {client_id: clientId()});
   } catch (_) {}
 }
+
 
 function wsBaseUrl() {
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;

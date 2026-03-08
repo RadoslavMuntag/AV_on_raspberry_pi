@@ -3,12 +3,12 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .config import FusionConfig
+from .config import PipelineConfig
 from ..contracts import PerceptionFrame, WorldState, SensorType
 
 class FusionModule:
-    def __init__(self, cfg: Optional[FusionConfig] = None) -> None:
-        self.cfg = cfg or FusionConfig()
+    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+        self.cfg = cfg or PipelineConfig()
 
     def fuse(self, p: PerceptionFrame) -> WorldState:
         ts = time.monotonic()

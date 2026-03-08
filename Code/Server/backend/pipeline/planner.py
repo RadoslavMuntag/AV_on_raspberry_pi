@@ -3,12 +3,12 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .config import PlannerConfig
+from .config import PipelineConfig
 from ..contracts import BehaviorState, PlannerDecision, WorldState, BehaviorState
 
 class BehaviorPlanner:
-    def __init__(self, cfg: Optional[PlannerConfig] = None) -> None:
-        self.cfg = cfg or PlannerConfig()
+    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+        self.cfg = cfg or PipelineConfig()
         self.current_state: BehaviorState = BehaviorState.IDLE
 
     def step(self, world: WorldState, requested_mode: BehaviorState, heartbeat_ok: bool) -> PlannerDecision:
@@ -34,6 +34,8 @@ class BehaviorPlanner:
                 self.current_state = BehaviorState.OBSTACLE_AVOID
                 return PlannerDecision(now, self.current_state, "obstacle_detected", 0.2, self.cfg.avoid_turn)
             self.current_state = BehaviorState.LINE_FOLLOW
+            if not world.lane_detected:
+                return PlannerDecision(now, self.current_state, "line_lost", self.cfg.no_lane_speed, 0.0)
             return PlannerDecision(now, self.current_state, "line_follow_nominal", self.cfg.cruise_speed, 0.0)
 
         if requested_mode == BehaviorState.OBSTACLE_AVOID:

@@ -128,6 +128,17 @@ async def update_config(payload: ConfigUpdateRequest) -> ApiMessage:
     state_store.update_config(**payload.model_dump())
     return ApiMessage(message="config updated")
 
+@app.post("/api/controller/dualsense/connect", response_model=ApiMessage)
+async def dualsense_connect() -> ApiMessage:
+    if not runtime.connect_dualsense():
+        raise HTTPException(status_code=404, detail="DualSense controller not found")
+    return ApiMessage(message="dualsense connected")
+
+
+@app.post("/api/controller/dualsense/disconnect", response_model=ApiMessage)
+async def dualsense_disconnect() -> ApiMessage:
+    runtime.disconnect_dualsense()
+    return ApiMessage(message="dualsense disconnected")
 
 @app.get("/video/mjpeg")
 async def mjpeg_stream() -> StreamingResponse:
@@ -161,6 +172,7 @@ async def ws_pipeline(websocket: WebSocket) -> None:
       - frame: all|perception|world|planner|manual|control (default: all)
     """
     frame = websocket.query_params.get("frame", "all")
+    print(f"New pipeline websocket connection with frame={frame}")
     valid_frames = {"all", "perception", "world", "planner", "manual", "control"}
 
     await websocket.accept()

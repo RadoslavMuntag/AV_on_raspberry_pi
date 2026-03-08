@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .config import PipelineConfig
+
 from ..services.state import StateStore
 from ..services.hardware import VehicleHardware
 
@@ -24,15 +26,17 @@ class PipelineSnapshot:
 class ModularPipeline:
     def __init__(
         self,
+        config: Optional[PipelineConfig] = None,
         perception: Optional[PerceptionModule] = None,
         fusion: Optional[FusionModule] = None,
         planner: Optional[BehaviorPlanner] = None,
         controller: Optional[DifferentialDriveController] = None,
     ) -> None:
-        self.perception = perception or PerceptionModule()
-        self.fusion = fusion or FusionModule()
-        self.planner = planner or BehaviorPlanner()
-        self.controller = controller or DifferentialDriveController()
+        self.config = config or PipelineConfig()
+        self.perception = perception or PerceptionModule(cfg=self.config)
+        self.fusion = fusion or FusionModule(cfg=self.config)
+        self.planner = planner or BehaviorPlanner(cfg=self.config)
+        self.controller = controller or DifferentialDriveController(cfg=self.config)
 
     def tick(
         self,
@@ -49,9 +53,5 @@ class ModularPipeline:
 
         hardware.set_motor(u.left_pwm, u.right_pwm)
         hardware.set_led(u.led_mode, u.led_rgb[0], u.led_rgb[1], u.led_rgb[2], 0)
-
-        if state_store:
-            state_store.set_pipeline_snapshot(perception=p, world=w, decision=d, control=u)
-            state_store.set_manual_command(manual_cmd)
 
         return PipelineSnapshot(perception=p, world=w, decision=d, control=u)
