@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import asynccontextmanager
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -145,7 +145,7 @@ async def mjpeg_stream() -> StreamingResponse:
     async def stream() -> AsyncGenerator[bytes, None]:
         boundary = b"--frame\r\n"
         while True:
-            frame = await asyncio.to_thread(hardware.get_jpeg_frame)
+            frame = await asyncio.to_thread(hardware.get_debug_jpeg_frame)
             if not frame:
                 await asyncio.sleep(0.05)
                 continue
@@ -154,6 +154,19 @@ async def mjpeg_stream() -> StreamingResponse:
 
     return StreamingResponse(stream(), media_type="multipart/x-mixed-replace; boundary=frame")
 
+@app.get("/video/mjpeg2")
+async def mjpeg_stream2() -> StreamingResponse:
+    async def stream() -> AsyncGenerator[bytes, None]:
+        boundary = b"--frame\r\n"
+        while True:
+            frame = await asyncio.to_thread(hardware.get_usb_jpeg_frame)
+            if not frame:
+                await asyncio.sleep(0.05)
+                continue
+            yield boundary
+            yield b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+
+    return StreamingResponse(stream(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(websocket: WebSocket) -> None:

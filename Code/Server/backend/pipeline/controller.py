@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from .config import PipelineConfig
-from ..contracts import BehaviorState, ControlTargets, ManualCommand, PlannerDecision, WorldState
+from ..contracts import BehaviorState, ControlTargets, LedMode, ManualCommand, PlannerDecision, WorldState
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
 class DifferentialDriveController:
-    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+    def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg = cfg or PipelineConfig()
 
     def _inverse_differential_kinematics(self, linear: float, angular: float) -> tuple[float, float]:
@@ -42,28 +41,28 @@ class DifferentialDriveController:
 
         if decision.safe_stop or decision.state == BehaviorState.SAFE_STOP:
             # Stop immediately, blink red light to indicate E-stop
-            return ControlTargets(now, 0, 0, "blink", (255, 0, 0))
+            return ControlTargets(now, 0, 0, LedMode.BLINK, (255, 0, 0))
 
         if decision.state == BehaviorState.IDLE:
             # No control output, no lights
-            return ControlTargets(now, 0, 0, "off", (0, 0, 0))
+            return ControlTargets(now, 0, 0, LedMode.OFF, (0, 0, 0))
 
         if decision.state == BehaviorState.MANUAL:
             # If not active stop, otherwise use manual command, solid orange light
             if not manual.active:
-                return ControlTargets(now, 0, 0, "index", (255, 120, 0))
+                return ControlTargets(now, 0, 0, LedMode.INDEX, (255, 120, 0))
             left, right = self._mix(manual.throttle, manual.steer)
-            return ControlTargets(now, left, right, "index", (0, 120, 255))
+            return ControlTargets(now, left, right, LedMode.INDEX, (0, 120, 255))
 
         if decision.state == BehaviorState.LINE_FOLLOW:
             #if world.lane_detected and world.lateral_confidence >= self.cfg.min_confidence:
-            turn = self.cfg.line_kp * world.lateral_error
+            turn = self.cfg.line_kp * (-world.line_offset)
             left, right = self._mix(decision.desired_speed, turn)
             return ControlTargets(now, left, right, "index", (0, 255, 0))
             #return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
 
         if decision.state == BehaviorState.OBSTACLE_AVOID:
             left, right = self._mix(decision.desired_speed, decision.desired_turn)
-            return ControlTargets(now, left, right, "index", (255, 0, 255))
+            return ControlTargets(now, left, right, LedMode.INDEX, (255, 0, 255))
 
-        return ControlTargets(now, 0, 0, "off", (0, 0, 0))
+        return ControlTargets(now, 0, 0, LedMode.OFF, (0, 0, 0))

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 class InfraredState(int, Enum):
     # The infrared.py module returns a single integer representing the state of the three infrared sensors, 
@@ -47,10 +46,15 @@ class ManualCommand:
 @dataclass(slots=True)
 class PerceptionFrame:
     ts: float
-    ultrasonic_cm: Optional[float]
-    infrared_raw: Optional[InfraredState]
-    line_error: Optional[float]      # negative=left, positive=right
-    line_confidence: float           # [0, 1]
+    ultrasonic_cm: float | None
+
+    left_encoder_cm: float | None = None
+    right_encoder_cm: float | None = None
+
+    line_angle: float | None = None  # in radians
+    line_curvature: float | None = None  # in 1/m
+    line_offset: float | None = None  # in range [-1, 1], normalized from pixels
+
     camera_ok: bool = True
     faults: list[str] = field(default_factory=list)
 
@@ -59,10 +63,13 @@ class PerceptionFrame:
 class WorldState:
     ts: float
     obstacle_ahead: bool
-    obstacle_distance_cm: Optional[float]
+    obstacle_distance_cm: float | None
     lane_detected: bool
-    lateral_error: float
-    lateral_confidence: float
+    
+    line_offset: float
+    line_angle: float
+    line_curvature: float
+
     sensor_health: dict[SensorType, bool] = field(default_factory=dict)
     stale: bool = False
 

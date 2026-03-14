@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from .config import PipelineConfig
 from ..contracts import PerceptionFrame, InfraredState
 from ..services.hardware import VehicleHardware
-from .vision import detect_line_error_from_jpeg
+from .vision import detect_line_geometry
 
 class PerceptionModule:
-    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+    def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg = cfg or PipelineConfig()
 
-    def _decode_infrared_line(self, raw: Optional[InfraredState]) -> tuple[Optional[float], float]:
+    def _decode_infrared_line(self, raw: InfraredState | None) -> tuple[float | None, float]:
         """
         Decode line position from a 3-sensor bit pattern.
         Returns (line_error, confidence).
@@ -45,49 +44,49 @@ class PerceptionModule:
         if ultrasonic is None:
             faults.append("ultrasonic_unavailable")
 
-        infrared_raw = hardware.read_infrared()
-        if infrared_raw is None:
-            faults.append("infrared_unavailable")
+        # infrared_raw_int = hardware.read_infrared()
+        # infrared_raw: InfraredState | None = None
+        # if infrared_raw_int is None:
+        #     faults.append("infrared_unavailable")
+        # else:
+        #     try:
+        #         infrared_raw = InfraredState(infrared_raw_int)
+        #     except ValueError:
+        #         faults.append(f"infrared_invalid_value:{infrared_raw_int}")
 
         # Infrared fallback
-        ir_line_error, ir_line_conf = self._decode_infrared_line(infrared_raw)
+        #ir_line_error, ir_line_conf = self._decode_infrared_line(infrared_raw)
+        left_distance = hardware.read_left_encoder()
+        right_distance = hardware.read_right_encoder()
 
-        camera_frame = hardware.get_jpeg_frame()
-        cam_line_error: Optional[float] = None
-        cam_line_conf = 0.0
+        camera_frame = hardware.get_usb_jpeg_frame()
+        cam_offset: float | None = None
+        cam_angle: float | None = None
+        cam_curvature: float | None = None
+
+        angle, curvature, offset = None, None, None
         if camera_frame is None:
             faults.append("camera_unavailable")
         else:
-            cam_line_error, cam_line_conf = detect_line_error_from_jpeg(camera_frame)
+            try:
+                cam_angle, cam_curvature, cam_offset, debug = detect_line_geometry(camera_frame)
+                hardware.set_debug_frame(debug)
+            except Exception as e:
+                faults.append(f"line_geometryppp_error: {str(e)}")
 
-        # Prefer camera if confident; otherwise fallback to IR
-        if cam_line_error is not None and cam_line_conf >= 0.2:
-            line_error = cam_line_error
-            line_conf = cam_line_conf
-        else:
-            line_error = ir_line_error
-            line_conf = ir_line_conf
+            angle = cam_angle
+            curvature = cam_curvature
+            offset = cam_offset
 
         return PerceptionFrame(
             ts=ts,
             ultrasonic_cm=ultrasonic,
-            infrared_raw=infrared_raw,
-            line_error=line_error,
-            line_confidence=line_conf,
+            left_encoder_cm=left_distance,
+            right_encoder_cm=right_distance,
+
+            line_angle=angle,
+            line_curvature=curvature,
+            line_offset=offset,
             camera_ok=hardware.ready,
             faults=faults,
         )
-
-if __name__ == "__main__":
-    import model.sensors.infrared as infrared_module
-
-    perception = PerceptionModule()
-    ir_sensor = infrared_module.Infrared()
-
-    try:
-        while True:
-            frame = perception._decode_infrared_line(ir_sensor.read_all_infrared())
-            print(frame)
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        ir_sensor.close()

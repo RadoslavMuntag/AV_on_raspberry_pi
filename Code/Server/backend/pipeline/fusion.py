@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from .config import PipelineConfig
 from ..contracts import PerceptionFrame, WorldState, SensorType
 
 class FusionModule:
-    def __init__(self, cfg: Optional[PipelineConfig] = None) -> None:
+    def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg = cfg or PipelineConfig()
 
     def fuse(self, p: PerceptionFrame) -> WorldState:
@@ -20,12 +19,15 @@ class FusionModule:
             ts=ts,
             obstacle_ahead=bool(obstacle),
             obstacle_distance_cm=dist,
-            lane_detected=p.line_error is not None and p.line_confidence > 0.0,
-            lateral_error=float(p.line_error or 0.0),
-            lateral_confidence=float(p.line_confidence),
+            lane_detected=(p.line_offset is not None and p.line_angle is not None),
+            line_offset=float(p.line_offset or 0.0),
+            line_angle=float(p.line_angle or 0.0),
+            line_curvature=float(p.line_curvature or 0.0),
+
+
             sensor_health={
                 SensorType.ULTRASONIC: p.ultrasonic_cm is not None,
-                SensorType.INFRARED: p.infrared_raw is not None,
+                SensorType.INFRARED: False,
                 SensorType.CAMERA: p.camera_ok,
             },
             stale=stale,

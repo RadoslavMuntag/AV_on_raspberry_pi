@@ -11,7 +11,7 @@ from ..contracts import BehaviorState, ManualCommand, PerceptionFrame, WorldStat
 @dataclass
 class RuntimeConfig:
     heartbeat_timeout_sec: float = 1.5
-    control_loop_hz: float = 30.0
+    control_loop_hz: float = 200.0
     max_motor_speed: int = 2800
 
 
@@ -29,6 +29,7 @@ class VehicleState:
     dualsense_connected: bool = False
     hardware_ready: bool = False
     hardware_error: Optional[str] = None
+    fps: Optional[float] = None
     updated_at: float = field(default_factory=lambda: time.time())
 
 

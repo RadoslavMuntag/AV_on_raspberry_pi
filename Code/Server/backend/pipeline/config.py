@@ -12,7 +12,10 @@ class PipelineConfig:
     avoid_turn: float = 0.6
 
     max_pwm: int = 2500
-    line_kp: float = 0.7
+    line_kp: float = 0.4
+    line_angle_kp: float = 0.35
+    line_curvature_speed_gain: float = 2.0
+    line_min_speed_factor: float = 0.45
     min_confidence: float = 0.15
 
     wheel_track: float = 14.0 # distance between tracks in cm, used for kinematic calculations

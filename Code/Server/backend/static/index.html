@@ -13,7 +13,12 @@
     <h2>Tank AV Local Interface</h2>
     <div class="grid">
       <div class="card">
-        <img src="/video/mjpeg" alt="video stream" />
+        <div class="row" style="margin-bottom:8px;">
+          <strong>Video</strong>
+          <button id="toggleVideoBtn" onclick="toggleVideoStreams()">Disable Video Streams</button>
+        </div>
+        <img id="video1" src="/video/mjpeg" alt="video stream" />
+        <img id="video2" src="/video/mjpeg2" alt="video stream" />
       </div>
       <div class="card">
         <div class="row">
@@ -52,6 +57,7 @@
               <option value="manual">pipeline: manual</option>
               <option value="control">pipeline: control</option>
             </select>
+            <button id="toggleTelemetryBtn" onclick="toggleTelemetryStream()">Disable State Stream</button>
           </div>
           <strong>State</strong>
           <pre id="state">waiting...</pre>

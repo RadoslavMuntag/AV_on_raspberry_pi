@@ -1,19 +1,15 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional
 
-from .config import PipelineConfig
+from backend.pipeline.controller import DifferentialDriveController
+from backend.pipeline.planner import BehaviorPlanner
+from backend.pipeline.fusion import FusionModule
+from backend.pipeline.config import PipelineConfig
+from backend.pipeline.perception import PerceptionModule
 
-from ..services.state import StateStore
-from ..services.hardware import VehicleHardware
+from backend.contracts import ManualCommand, PerceptionFrame, PlannerDecision, ControlTargets, WorldState, BehaviorState
 
-from ..contracts import ManualCommand, PerceptionFrame, PlannerDecision, ControlTargets, WorldState, BehaviorState
-from .controller import DifferentialDriveController
-from .fusion import FusionModule
-from .perception import PerceptionModule
-from .planner import BehaviorPlanner
-
+from backend.services.hardware import VehicleHardware
 
 @dataclass(slots=True)
 class PipelineSnapshot:
@@ -26,25 +22,24 @@ class PipelineSnapshot:
 class ModularPipeline:
     def __init__(
         self,
-        config: Optional[PipelineConfig] = None,
-        perception: Optional[PerceptionModule] = None,
-        fusion: Optional[FusionModule] = None,
-        planner: Optional[BehaviorPlanner] = None,
-        controller: Optional[DifferentialDriveController] = None,
+        config: PipelineConfig | None = None,
+        perception: PerceptionModule | None = None,
+        fusion: FusionModule | None = None,
+        planner: BehaviorPlanner | None = None,
+        controller: DifferentialDriveController | None = None,
     ) -> None:
-        self.config = config or PipelineConfig()
-        self.perception = perception or PerceptionModule(cfg=self.config)
-        self.fusion = fusion or FusionModule(cfg=self.config)
-        self.planner = planner or BehaviorPlanner(cfg=self.config)
-        self.controller = controller or DifferentialDriveController(cfg=self.config)
+        self.config : PipelineConfig = config or PipelineConfig()
+        self.perception: PerceptionModule = perception or PerceptionModule(cfg=self.config)
+        self.fusion: FusionModule = fusion or FusionModule(cfg=self.config)
+        self.planner: BehaviorPlanner = planner or BehaviorPlanner(cfg=self.config)
+        self.controller: DifferentialDriveController = controller or DifferentialDriveController(cfg=self.config)
 
     def tick(
         self,
         hardware: VehicleHardware,
         requested_mode: BehaviorState,
         heartbeat_ok: bool,
-        manual_cmd: ManualCommand,
-        state_store: Optional[StateStore] = None,
+        manual_cmd: ManualCommand
     ) -> PipelineSnapshot:
         p : PerceptionFrame = self.perception.read(hardware)
         w : WorldState = self.fusion.fuse(p)

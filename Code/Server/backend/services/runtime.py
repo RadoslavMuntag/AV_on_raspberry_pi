@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import threading
-from typing import Optional
+from _thread import lock
 
 from .hardware import VehicleHardware
 from .state import StateStore
@@ -15,16 +15,21 @@ class RuntimeManager:
     def __init__(self, state_store: StateStore, hardware: VehicleHardware) -> None:
         self.state_store : StateStore = state_store
         self.hardware : VehicleHardware = hardware
-        self.pipeline = ModularPipeline()
+        self.pipeline: ModularPipeline = ModularPipeline()
 
-        self._manual_cmd = ManualCommand()
-        self._manual_cmd_lock = threading.Lock()
+        self._manual_cmd: ManualCommand = ManualCommand()
+        self._manual_cmd_lock: lock = threading.Lock()
 
-        self._running = False
-        self._telemetry_task: Optional[asyncio.Task] = None
-        self._control_task: Optional[asyncio.Task] = None
+        self._running : bool = False
+        self._telemetry_task: asyncio.Task | None = None
+        self._control_task: asyncio.Task | None = None
         
-        self._dualsense: Optional[DualSense] = None
+        self._dualsense: DualSense | None = None
+
+        # Control-loop FPS stats
+        self.control_loop_fps: float = 0.0
+        self._control_fps_frames: int = 0
+        self._control_fps_t0: float = time.perf_counter()
 
     async def start(self) -> None:
         self.hardware.start()
@@ -42,7 +47,7 @@ class RuntimeManager:
         self._telemetry_task = asyncio.create_task(self._telemetry_loop()) 
         self._control_task = asyncio.create_task(self._control_loop())
 
-        self.connect_dualsense_task = self.connect_dualsense()
+        _ = self.connect_dualsense()
 
     def connect_dualsense(self) -> bool:
         if not self._dualsense:
@@ -154,7 +159,7 @@ class RuntimeManager:
         while self._running:
             self.state_store.update_state(
                 ultrasonic_cm=self.hardware.read_ultrasonic(),
-                infrared_value=self.hardware.read_infrared(),
+                #infrared_value=self.hardware.read_infrared(),
                 hardware_ready=self.hardware.ready,
                 hardware_error=self.hardware.error,
             )
@@ -210,9 +215,17 @@ class RuntimeManager:
                 left_motor=pipe.control.left_pwm,
                 right_motor=pipe.control.right_pwm,
                 ultrasonic_cm=pipe.perception.ultrasonic_cm,
-                infrared_value=pipe.perception.infrared_raw,
                 hardware_ready=self.hardware.ready,
                 hardware_error=self.hardware.error,
             )
+
+            self._control_fps_frames += 1
+            now = time.perf_counter()
+            elapsed = now - self._control_fps_t0
+            if elapsed >= 1.0:
+                self.control_loop_fps = self._control_fps_frames / elapsed
+                self.state_store.update_state(fps=self.control_loop_fps)
+                self._control_fps_frames = 0
+                self._control_fps_t0 = now
 
             await asyncio.sleep(loop_delay)
