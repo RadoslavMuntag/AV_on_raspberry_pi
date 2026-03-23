@@ -173,6 +173,12 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV) 
 
+    ## implemet roi mask to focus on bottom half of image
+    h, w = binary.shape
+    mask = np.zeros_like(binary)
+    mask[int(h * 0.45):h, 0:w] = 255
+    binary = cv2.bitwise_and(binary, binary, mask=mask)
+
     # Remove noise
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
@@ -257,4 +263,135 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     return angle, curvature, offset, confidence, debug
 
 
-    
+def detect_line_geometry_canny(jpeg_bytes: bytes):
+    """
+    Detect line direction and curvature from a front-facing camera frame
+    using Canny + Hough transform.
+
+    Returns:
+        angle (rad)
+        curvature
+        offset (-1 to 1)
+        confidence (0 to 1)
+        debug_image
+    """
+
+    import numpy as np
+    import cv2
+
+    # Decode image
+    arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        raise ValueError("Failed to decode JPEG bytes into an image")
+
+    h, w = frame.shape[:2]
+
+    # --- 1. Preprocessing (Canny) ---
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150)
+
+    # --- 2. Region of Interest (bottom part of image) ---
+    mask = np.zeros_like(edges)
+
+    polygon = np.array([[
+        (0, h),
+        (w, h),
+        (w, int(h * 0.45)),
+        (0, int(h * 0.45))
+    ]], dtype=np.int32)
+
+    cv2.fillPoly(mask, polygon, 255)
+    edges = cv2.bitwise_and(edges, mask)
+
+    # --- 3. Hough Transform ---
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=50,
+        minLineLength=50,
+        maxLineGap=20
+    )
+
+    # --- 4. Convert lines → points ---
+    points = []
+
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+
+            # Skip near-horizontal lines (noise)
+            if abs(y2 - y1) < 10:
+                continue
+
+            num_samples = 20
+            for t in np.linspace(0, 1, num_samples):
+                x = int(x1 * (1 - t) + x2 * t)
+                y = int(y1 * (1 - t) + y2 * t)
+                points.append((x, y))
+
+    if len(points) < 3:
+        return None, None, None, 0.0, frame
+
+    points = np.array(points)
+    x = points[:, 0]
+    y = points[:, 1]
+
+    # --- 5. Polynomial fit (same as your original) ---
+    coeffs = np.polyfit(y, x, 2)
+    a, b, c = coeffs
+
+    # Heading angle (slope at bottom)
+    y_eval = h
+    slope = 2 * a * y_eval + b
+    angle = float(np.arctan(slope))
+
+    # Curvature
+    curvature = float(abs(2 * a) / ((1 + slope**2) ** 1.5))
+
+    # Offset from center
+    x_line = a * y_eval**2 + b * y_eval + c
+    center = w / 2
+    offset = float(np.clip((x_line - center) / center, -1.0, 1.0))
+
+    # --- 6. Confidence (adapted) ---
+    num_lines = 0 if lines is None else len(lines)
+    line_score = float(np.clip(num_lines / 10.0, 0.0, 1.0))
+
+    y_span = float(y.max() - y.min())
+    vertical_coverage = float(np.clip(y_span / h, 0.0, 1.0))
+
+    x_fit = a * y**2 + b * y + c
+    rmse = float(np.sqrt(np.mean((x - x_fit) ** 2)))
+    fit_score = float(np.clip(1.0 - (rmse / max(1.0, 0.2 * w)), 0.0, 1.0))
+
+    point_score = float(np.clip(len(points) / 300.0, 0.0, 1.0))
+
+    confidence = float(np.clip(
+        0.4 * line_score +
+        0.3 * vertical_coverage +
+        0.2 * fit_score +
+        0.1 * point_score,
+        0.0,
+        1.0
+    ))
+
+    # --- 7. Debug visualization ---
+    debug = frame.copy()
+
+    # Draw Hough lines
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(debug, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+    # Draw fitted curve
+    for yi in range(0, h, 5):
+        xi = int(a * yi**2 + b * yi + c)
+        if 0 <= xi < w:
+            cv2.circle(debug, (xi, yi), 2, (0, 255, 0), -1)
+
+    return angle, curvature, offset, confidence, debug

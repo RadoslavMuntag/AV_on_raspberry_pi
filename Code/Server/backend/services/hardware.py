@@ -14,8 +14,8 @@ from model.sensors.encoder import MotorEncoder
 from model.misc.led import Led
 from ..misc.usb_camera import USBCamera
 
-PI_CAM = False
-USB_CAM = True
+PI_CAM = True
+USB_CAM = False
 
 REVERSED_MOTORS_DIRECTION = True  # Set to True if motors are wired in reverse and need to be flipped in software
 
@@ -69,7 +69,7 @@ class VehicleHardware:
         try:
             self._car = Car()
             self._led = Led()
-            self._camera = Camera(stream_size=(400, 300))
+            self._camera = Camera(stream_size=(1280, 720))
             self._usb_camera = USBCamera(stream_size=(400, 300))
             self._ready = True
             self._error = None
@@ -126,12 +126,12 @@ class VehicleHardware:
         return None
 
     def set_debug_frame(self, frame: MatLike) -> None:
-        if self._usb_camera and USB_CAM:
-            self._usb_camera.set_debug_frame(frame)
+        if self._camera and PI_CAM:
+            self._camera.set_debug_frame(frame)
 
     def get_debug_jpeg_frame(self) -> bytes | None:
-        if self._usb_camera and USB_CAM:
-            return self._usb_camera.get_debug_frame()
+        if self._camera and PI_CAM:
+            return self._camera.get_debug_frame()
         return None
 
     def stop_motors(self) -> None:

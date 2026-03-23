@@ -1,4 +1,6 @@
 import time
+from cv2.typing import MatLike
+import cv2
 from picamera2 import Picamera2, Preview
 from picamera2.encoders import H264Encoder, JpegEncoder
 from picamera2.outputs import FileOutput
@@ -27,11 +29,12 @@ class Camera:
         self.stream_size = stream_size             # Set the size of the video stream
         self.stream_config = self.camera.create_video_configuration(main={"size": stream_size}, transform=self.transform)  # Create the video configuration
         self.streaming_output = StreamingOutput()  # Initialize the streaming output object
+        self.debug_output = StreamingOutput()            # Initialize the debug output object  
         self.streaming = False                     # Initialize the streaming flag
 
     def start_image(self):
         self.camera.start_preview(Preview.QTGL)  # Start the camera preview using the QTGL backend
-        self.camera.start()                      # Start the camera
+
 
     def save_image(self, filename):
         metadata = self.camera.capture_file(filename)  # Capture an image and save it to the specified file
@@ -51,11 +54,35 @@ class Camera:
                 output = FileOutput(self.streaming_output)  # Set the streaming output object
             self.camera.start_recording(encoder, output)    # Start recording or streaming
             self.streaming = True                           # Set the streaming flag to True
+            self.camera.set_controls({
+                "AfMode": 0,
+                "LensPosition": 3.0,
+
+                "AwbEnable": False,       # disable auto white balance
+
+                "Contrast": 1.5,          # increase contrast
+                "Sharpness": 2.0,         # enhance edges
+
+            })
 
     def stop_stream(self):
         if self.streaming:
             self.camera.stop_recording()  # Stop the recording or streaming
             self.streaming = False        # Set the streaming flag to False
+
+    def set_debug_frame(self, frame: MatLike):
+        ok, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        if ok:
+            with self.debug_output.condition:
+                self.debug_output.write(jpg.tobytes())
+
+    def get_debug_frame(self, timeout: float | None = None) -> bytes | None:
+        with self.debug_output.condition:
+            if timeout is None:
+                _ = self.debug_output.condition.wait()
+            else:
+                _ = self.debug_output.condition.wait(timeout=timeout)
+            return self.debug_output.frame
 
     def get_frame(self):
         with self.streaming_output.condition:

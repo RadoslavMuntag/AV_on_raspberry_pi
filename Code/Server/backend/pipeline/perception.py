@@ -26,7 +26,7 @@ class PerceptionModule:
         if right_speed is None:
             faults.append("right_encoder_unavailable")
 
-        camera_frame = hardware.get_usb_jpeg_frame()
+        camera_frame = hardware.get_jpeg_frame()
         cam_offset: float | None = None
         cam_angle: float | None = None
         cam_curvature: float | None = None

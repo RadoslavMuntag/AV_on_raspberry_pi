@@ -38,8 +38,9 @@ class BehaviorPlanner:
             if not world.lane_detected:
                 return PlannerDecision(now, self.current_state, "line_lost", 0.0, 0.0)
 
+            #speed = self.cfg.cruise_speed * max(self.cfg.line_min_speed_factor, 1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature))
             speed = self.cfg.cruise_speed * max(self.cfg.line_min_speed_factor, 1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature))
-            turn = self.cfg.line_kp * (-world.line_offset) + self.cfg.line_angle_kp * (world.line_angle)
+            turn = self.cfg.line_kp * (world.line_offset) + self.cfg.line_angle_kp * (-world.line_angle)
             return PlannerDecision(now, self.current_state, "line_follow_nominal", speed, turn)
 
         if requested_mode == BehaviorState.OBSTACLE_AVOID:
