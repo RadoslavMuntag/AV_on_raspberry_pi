@@ -48,12 +48,13 @@ class PerceptionFrame:
     ts: float
     ultrasonic_cm: float | None
 
-    left_encoder_cm: float | None = None
-    right_encoder_cm: float | None = None
+    left_speed: float | None = None
+    right_speed: float | None = None
 
     line_angle: float | None = None  # in radians
     line_curvature: float | None = None  # in 1/m
     line_offset: float | None = None  # in range [-1, 1], normalized from pixels
+    line_confidence: float = 0.0  # in range [0, 1]
 
     camera_ok: bool = True
     faults: list[str] = field(default_factory=list)
@@ -69,6 +70,9 @@ class WorldState:
     line_offset: float
     line_angle: float
     line_curvature: float
+
+    left_speed: float
+    right_speed: float
 
     sensor_health: dict[SensorType, bool] = field(default_factory=dict)
     stale: bool = False

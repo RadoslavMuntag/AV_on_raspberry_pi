@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cv2.typing import MatLike
+import math
 
 from model.sensors.camera import Camera
 
@@ -13,8 +14,10 @@ from model.sensors.encoder import MotorEncoder
 from model.misc.led import Led
 from ..misc.usb_camera import USBCamera
 
-PI_CAM = True
+PI_CAM = False
 USB_CAM = True
+
+REVERSED_MOTORS_DIRECTION = True  # Set to True if motors are wired in reverse and need to be flipped in software
 
 class Car:
     """Legacy car interface. This is used internally by VehicleHardware, 
@@ -25,8 +28,8 @@ class Car:
         self.sonic: Ultrasonic = Ultrasonic()
         self.motor: tankMotor = tankMotor()
         self.infrared: Infrared = None
-        self.left_encoder: MotorEncoder = MotorEncoder(signal_pin=16, ticks_per_revolution=10)
-        self.right_encoder: MotorEncoder = MotorEncoder(signal_pin=19, ticks_per_revolution=10)
+        self.left_encoder: MotorEncoder = MotorEncoder(signal_pin=19, ticks_per_revolution=10)
+        self.right_encoder: MotorEncoder = MotorEncoder(signal_pin=16, ticks_per_revolution=10)
 
 
     def close(self):
@@ -138,6 +141,8 @@ class VehicleHardware:
     def set_motor(self, left: int, right: int) -> None:
         """Set motor speeds. Expects values in range [-4095, 4095]. Positive is forward."""
         if self._car:
+            if REVERSED_MOTORS_DIRECTION:
+                left, right = -left, -right
             self._car.motor.setMotorModel(left, right)
 
     def set_servo(self, index: int, angle: int) -> None:
@@ -179,20 +184,20 @@ class VehicleHardware:
     #             return None
     #     return None
 
-    def read_left_encoder(self) -> float | None:
+    def read_left_encoder(self, wheel_radius: float, dt: float) -> float | None:
         """Returns distance in cm from left motor encoder, or None if error."""
         if self._car:
             try:
-                return self._car.left_encoder.get_distance(2.5)
+                return self._car.left_encoder.get_speed(wheel_radius * 2 * math.pi, dt)
             except Exception:
                 return None
         return None
 
-    def read_right_encoder(self) -> float | None:
+    def read_right_encoder(self, wheel_radius: float, dt: float) -> float | None:
         """Returns distance in cm from right motor encoder, or None if error."""
         if self._car:
             try:
-                return self._car.right_encoder.get_distance(2.5)
+                return self._car.right_encoder.get_speed(wheel_radius * 2 * math.pi, dt)
             except Exception:
                 return None
         return None

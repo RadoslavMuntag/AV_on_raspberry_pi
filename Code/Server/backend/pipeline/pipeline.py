@@ -39,12 +39,16 @@ class ModularPipeline:
         hardware: VehicleHardware,
         requested_mode: BehaviorState,
         heartbeat_ok: bool,
-        manual_cmd: ManualCommand
+        manual_cmd: ManualCommand,
+        dt: float
     ) -> PipelineSnapshot:
-        p : PerceptionFrame = self.perception.read(hardware)
+        p : PerceptionFrame = self.perception.read(hardware, dt)
         w : WorldState = self.fusion.fuse(p)
         d : PlannerDecision = self.planner.step(w, requested_mode=requested_mode, heartbeat_ok=heartbeat_ok)
-        u : ControlTargets = self.controller.step(d, w, manual_cmd)
+        u : ControlTargets = self.controller.step(d, w, manual_cmd, dt)
+
+        if self.config.DEBUG:
+            print("DEBUG: Control outputs - left_pwm:", u.left_pwm, "right_pwm:", u.right_pwm, "led_mode:", u.led_mode, "led_rgb:", u.led_rgb)
 
         hardware.set_motor(u.left_pwm, u.right_pwm)
         hardware.set_led(u.led_mode, u.led_rgb[0], u.led_rgb[1], u.led_rgb[2], 0)

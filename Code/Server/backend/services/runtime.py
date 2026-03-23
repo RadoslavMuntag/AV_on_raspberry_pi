@@ -1,6 +1,9 @@
+
 from __future__ import annotations
 
 import asyncio
+from _asyncio import Task
+
 import time
 import threading
 from _thread import lock
@@ -21,8 +24,8 @@ class RuntimeManager:
         self._manual_cmd_lock: lock = threading.Lock()
 
         self._running : bool = False
-        self._telemetry_task: asyncio.Task | None = None
-        self._control_task: asyncio.Task | None = None
+        self._telemetry_task: Task[None] | None= None
+        self._control_task: Task[None] | None = None
         
         self._dualsense: DualSense | None = None
 
@@ -143,7 +146,7 @@ class RuntimeManager:
         """Called by DualSense handler to switch between manual and autonomous mode."""
         if mode == BehaviorState.MANUAL:
             self.state_store.update_state(e_stop=False)
-        self.state_store.update_state(mode=mode)
+        self.state_store.update_state(requested_mode=mode)
     
     def submit_manual_command(self, cmd: ManualCommand) -> None:
         """Called by DualSense handler to submit manual driving commands."""
@@ -163,10 +166,15 @@ class RuntimeManager:
                 hardware_ready=self.hardware.ready,
                 hardware_error=self.hardware.error,
             )
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
     async def _control_loop(self) -> None:
+        last_t = time.perf_counter()
         while self._running:
+            now = time.perf_counter()
+            dt = now - last_t
+            last_t = now
+
             snap = self.state_store.snapshot()
             state = snap["state"]
             cfg = snap["config"]
@@ -174,8 +182,6 @@ class RuntimeManager:
 
             timed_out = self.state_store.should_timeout_controller()
             if timed_out:
-                with self._manual_cmd_lock:
-                    self._manual_cmd = ManualCommand()
                 self.state_store.update_state(
                     controller_id=None,
                     mode=BehaviorState.SAFE_STOP,
@@ -199,6 +205,7 @@ class RuntimeManager:
                 requested_mode=requested_mode,
                 heartbeat_ok=heartbeat_ok and not state["e_stop"],
                 manual_cmd=cmd_for_tick,
+                dt=dt,
             )
 
             self.state_store.set_pipeline_snapshot(
@@ -210,8 +217,12 @@ class RuntimeManager:
 
             self.state_store.set_manual_command(cmd_for_tick)
 
+            requested_mode = self.state_store.snapshot()["state"]["requested_mode"]
+            temp_mode = requested_mode if requested_mode is not None else pipe.decision.state.value
+
             self.state_store.update_state(
-                mode=pipe.decision.state.value,
+                mode=temp_mode,
+                requested_mode=None,
                 left_motor=pipe.control.left_pwm,
                 right_motor=pipe.control.right_pwm,
                 ultrasonic_cm=pipe.perception.ultrasonic_cm,
@@ -220,7 +231,6 @@ class RuntimeManager:
             )
 
             self._control_fps_frames += 1
-            now = time.perf_counter()
             elapsed = now - self._control_fps_t0
             if elapsed >= 1.0:
                 self.control_loop_fps = self._control_fps_frames / elapsed

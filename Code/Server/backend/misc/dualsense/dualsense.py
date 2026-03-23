@@ -1,29 +1,32 @@
+from evdev.device import InputDevice
+
 import evdev
 import threading
+from typing import Callable
 
 from ...services.state import StateStore
 from ...contracts import BehaviorState, ManualCommand
 
 class DualSense:
-    def __init__(self, state_store: StateStore, submit_manual_cmd_callback) -> None:
+    def __init__(self, state_store: StateStore, submit_manual_cmd_callback: Callable[[ManualCommand], None]) -> None:
         self.state_store: StateStore = state_store
-        self.device: evdev.InputDevice | None = None
-        self.connected = False
-        self.thread = None
+        self.device: InputDevice[str] | None = None
+        self.connected: bool = False
+        self.thread: threading.Thread | None = None
 
         # Callback to submit manual commands to the runtime manager
-        self.submit_manual_cmd_callback = submit_manual_cmd_callback
+        self.submit_manual_cmd_callback: Callable[[ManualCommand], None] = submit_manual_cmd_callback
 
         # Servo angles for incremental control
-        self.servo_angles = [90, 140, 90]  # Initial angles for servos 0, 1, 2
-        self.servo_step = 5  # Degrees to change per D-pad press
+        self.servo_angles: list[int] = [90, 140, 90]  # Initial angles for servos 0, 1, 2
+        self.servo_step: int = 5  # Degrees to change per D-pad press
 
     def is_connected(self) -> bool:
         return self.connected
 
-    def _find_controller(self) -> evdev.InputDevice | None:
+    def _find_controller(self) -> InputDevice[str] | None:
         """Find the DualSense controller device"""
-        devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+        devices: list[InputDevice[str]] = [evdev.InputDevice(path) for path in evdev.list_devices()]
         for device in devices:
             if "DualSense" in device.name and "Motion" not in device.name and "Touchpad" not in device.name:
                 return device
@@ -74,13 +77,15 @@ class DualSense:
                     # Handle button presses
                     if event.value == 1:  # Button pressed (not released)
                         if event.code == evdev.ecodes.BTN_SOUTH:  # X button
-                            self.state_store.update_state(mode=BehaviorState.MANUAL)
+                            self.state_store.update_state(requested_mode=BehaviorState.MANUAL)
                         elif event.code == evdev.ecodes.BTN_WEST:  # Square button
-                            self.state_store.update_state(mode=BehaviorState.OBSTACLE_AVOID)
+                            self.state_store.update_state(requested_mode=BehaviorState.OBSTACLE_AVOID)
                         elif event.code == evdev.ecodes.BTN_EAST:  # Circle button
-                            self.state_store.update_state(mode=BehaviorState.SAFE_STOP)
+                            self.state_store.update_state(requested_mode=BehaviorState.SAFE_STOP)
                         elif event.code == evdev.ecodes.BTN_NORTH:  # Triangle button
-                            self.state_store.update_state(mode=BehaviorState.LINE_FOLLOW)
+                            self.state_store.update_state(requested_mode=BehaviorState.LINE_FOLLOW)
+
+                        print(f"Button event: code={event.code}, value={event.value}")
 
 
             self.close()
@@ -93,7 +98,7 @@ class DualSense:
             print(f"Error reading controller: {e}")
             self.close()
 
-    def _handle_joystick(self, x_value, y_value):
+    def _handle_joystick(self, x_value, y_value) -> None:
         """Handle left joystick input"""
         if x_value is not None:
             self.last_x = x_value
@@ -120,6 +125,9 @@ class DualSense:
         # Normalize to -1 to 1
         linear_norm = -(stateY - center) / max_range  # Y is inverted
         angular_norm = -(stateX - center) / max_range
+
+        if abs(linear_norm) < 0.01 and abs(angular_norm) < 0.01:
+            return
     
         self.submit_manual_cmd_callback(ManualCommand(throttle=linear_norm, steer=angular_norm, active=True))     
 

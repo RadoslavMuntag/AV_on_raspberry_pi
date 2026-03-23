@@ -135,10 +135,10 @@ async def dualsense_connect() -> ApiMessage:
     return ApiMessage(message="dualsense connected")
 
 
-@app.post("/api/controller/dualsense/disconnect", response_model=ApiMessage)
-async def dualsense_disconnect() -> ApiMessage:
-    runtime.disconnect_dualsense()
-    return ApiMessage(message="dualsense disconnected")
+# @app.post("/api/controller/dualsense/disconnect", response_model=ApiMessage)
+# async def dualsense_disconnect() -> ApiMessage:
+#     runtime.disconnect_dualsense()
+#     return ApiMessage(message="dualsense disconnected")
 
 @app.get("/video/mjpeg")
 async def mjpeg_stream() -> StreamingResponse:

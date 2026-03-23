@@ -1,24 +1,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from re import DEBUG
 
 @dataclass(slots=True)
 class PipelineConfig:
     obstacle_threshold_cm: float = 25.0
     max_sensor_age_s: float = 0.25
 
-    cruise_speed: float = 0.36
-    no_lane_speed: float = 0.31
+    cruise_speed: float = 25.0 # in cm/s
+    no_lane_speed: float = 10.0 # in cm/s
     avoid_turn: float = 0.6
 
-    max_pwm: int = 2500
-    line_kp: float = 0.4
-    line_angle_kp: float = 0.35
-    line_curvature_speed_gain: float = 2.0
+    # PID controller parameters
+    speed_kp: float = 0.02
+    speed_ki: float = 0.001
+    speed_kd: float = 0.00001
+
+    max_pwm: int = 4096
+    min_pwm: int = 0  # minimum PWM to overcome static friction and ensure movement, in the range [0, max_pwm]
+
+    line_kp: float = 2.1
+    line_angle_kp: float = 0.4
+    line_curvature_speed_gain: float = 500.0
     line_min_speed_factor: float = 0.45
-    min_confidence: float = 0.15
+    min_confidence: float = 0.4
 
     wheel_track: float = 14.0 # distance between tracks in cm, used for kinematic calculations
+    wheel_radius: float = 1.25 # radius of the wheels in cm, used for kinematic calculations
+
+    DEBUG: bool = False
 
 
 

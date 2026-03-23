@@ -28,5 +28,14 @@ class MotorEncoder:
         revolutions = self.current_ticks / self.ticks_per_revolution
         return revolutions * wheel_circumference
 
+    def get_speed(self, wheel_circumference: float, dt: float) -> float:
+        if dt <= 0.0:
+            raise ValueError("dt must be > 0")
+        
+        distance = self.get_distance(wheel_circumference)
+        speed = distance / dt
+        self.reset()  # Reset ticks after calculating speed for the interval
+        return speed
+
     def close(self) -> None:
         self.encoder.close()

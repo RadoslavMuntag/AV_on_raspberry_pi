@@ -18,7 +18,7 @@ class StreamingOutput(io.BufferedIOBase):
 
 
 class USBCamera:
-    def __init__(self, device: int = 0, preview_size: tuple[int, int] = (640, 480), stream_size: tuple[int, int] = (400, 300), fps: int = 20) -> None:
+    def __init__(self, device: int = 8, preview_size: tuple[int, int] = (640, 480), stream_size: tuple[int, int] = (400, 300), fps: int = 20) -> None:
         self.device: int = device
         self.preview_size: tuple[int, int] = preview_size
         self.stream_size: tuple[int, int] = stream_size
@@ -75,7 +75,8 @@ class USBCamera:
     def set_debug_frame(self, frame: MatLike):
         ok, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
         if ok:
-            self.debug_output.write(jpg.tobytes())
+            with self.debug_output.condition:
+                self.debug_output.write(jpg.tobytes())
 
     def get_debug_frame(self, timeout: float | None = None) -> bytes | None:
         with self.debug_output.condition:

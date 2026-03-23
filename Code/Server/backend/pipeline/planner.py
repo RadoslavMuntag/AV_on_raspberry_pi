@@ -5,15 +5,14 @@ import time
 from backend.pipeline.config import PipelineConfig
 from backend.contracts import BehaviorState, PlannerDecision, WorldState
 
-def _clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
-
 class BehaviorPlanner:
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg: PipelineConfig = cfg or PipelineConfig()
         self.current_state: BehaviorState = BehaviorState.IDLE
 
     def step(self, world: WorldState, requested_mode: BehaviorState, heartbeat_ok: bool) -> PlannerDecision:
+        if self.cfg.DEBUG:
+            print("DEBUG: Planner step - world:", world, "requested_mode:", requested_mode, "heartbeat_ok:", heartbeat_ok)
         now = time.monotonic()
 
         if not heartbeat_ok or world.stale:
@@ -38,7 +37,10 @@ class BehaviorPlanner:
             self.current_state = BehaviorState.LINE_FOLLOW
             if not world.lane_detected:
                 return PlannerDecision(now, self.current_state, "line_lost", 0.0, 0.0)
-            return PlannerDecision(now, self.current_state, "line_follow_nominal", self.cfg.cruise_speed, 0.0)
+
+            speed = self.cfg.cruise_speed * max(self.cfg.line_min_speed_factor, 1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature))
+            turn = self.cfg.line_kp * (-world.line_offset) + self.cfg.line_angle_kp * (world.line_angle)
+            return PlannerDecision(now, self.current_state, "line_follow_nominal", speed, turn)
 
         if requested_mode == BehaviorState.OBSTACLE_AVOID:
             self.current_state = BehaviorState.OBSTACLE_AVOID

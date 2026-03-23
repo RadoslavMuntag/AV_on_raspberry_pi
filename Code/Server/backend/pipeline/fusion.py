@@ -15,6 +15,9 @@ class FusionModule:
         obstacle = dist is not None and dist <= self.cfg.obstacle_threshold_cm
         stale = (ts - p.ts) > self.cfg.max_sensor_age_s
 
+        if self.cfg.DEBUG:
+            print("DEBUG: Fusing perception into world state - obstacle:", obstacle, "distance:", dist, "stale:", stale)
+
         return WorldState(
             ts=ts,
             obstacle_ahead=bool(obstacle),
@@ -24,6 +27,8 @@ class FusionModule:
             line_angle=float(p.line_angle or 0.0),
             line_curvature=float(p.line_curvature or 0.0),
 
+            left_speed=float(p.left_speed or 0.0),
+            right_speed=float(p.right_speed or 0.0),
 
             sensor_health={
                 SensorType.ULTRASONIC: p.ultrasonic_cm is not None,

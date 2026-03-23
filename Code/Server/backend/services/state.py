@@ -1,9 +1,10 @@
 from __future__ import annotations
+from _thread import RLock
 
 import threading
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..contracts import BehaviorState, ManualCommand, PerceptionFrame, WorldState, PlannerDecision, ControlTargets
 
@@ -12,48 +13,49 @@ from ..contracts import BehaviorState, ManualCommand, PerceptionFrame, WorldStat
 class RuntimeConfig:
     heartbeat_timeout_sec: float = 1.5
     control_loop_hz: float = 200.0
-    max_motor_speed: int = 2800
+    max_motor_speed: int = 4096
 
 
 @dataclass
 class VehicleState:
     mode: BehaviorState = BehaviorState.IDLE
-    controller_id: Optional[str] = None
+    requested_mode: BehaviorState | None = None
+    controller_id: str | None = None
     controller_last_seen: float = 0.0
     e_stop: bool = False
     left_motor: int = 0
     right_motor: int = 0
-    ultrasonic_cm: Optional[float] = None
-    infrared_value: Optional[int] = None
+    ultrasonic_cm: float | None = None
+    infrared_value: int | None = None
     camera_streaming: bool = False
     dualsense_connected: bool = False
     hardware_ready: bool = False
-    hardware_error: Optional[str] = None
-    fps: Optional[float] = None
+    hardware_error: str | None = None
+    fps: float | None = None
     updated_at: float = field(default_factory=lambda: time.time())
 
 
 class StateStore:
     def __init__(self) -> None:
         # a reentrant lock to allow the same thread to acquire it multiple times if needed.
-        self._lock = threading.RLock()
-        self.config = RuntimeConfig()
-        self.state = VehicleState()
+        self._lock: RLock = threading.RLock()
+        self.config: RuntimeConfig = RuntimeConfig()
+        self.state: VehicleState = VehicleState()
 
-        self._perception_frame: Optional[PerceptionFrame] = None
-        self._world_state: Optional[WorldState] = None
-        self._planner_decision: Optional[PlannerDecision] = None
-        self._control_targets: Optional[ControlTargets] = None
+        self._perception_frame: PerceptionFrame | None = None
+        self._world_state: WorldState | None = None
+        self._planner_decision: PlannerDecision | None = None
+        self._control_targets: ControlTargets | None = None
 
-        self._manual_command: Optional[ManualCommand] = None
-    def snapshot(self) -> Dict[str, Any]:
+        self._manual_command: ManualCommand | None = None
+    def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "state": asdict(self.state),
                 "config": asdict(self.config),
             }
         
-    def pipeline_snapshot(self, frame: str = "all") -> Dict[str, Any]:
+    def pipeline_snapshot(self, frame: str = "all") -> dict[str, Any]:
         with self._lock:
             all_frames = {
                 "perception": asdict(self._perception_frame) if self._perception_frame else None,
@@ -68,27 +70,27 @@ class StateStore:
                 raise ValueError(f"unsupported frame '{frame}'")
             return {frame: all_frames[frame]}
         
-    def set_perception_frame(self, frame: Optional[PerceptionFrame]) -> None:
+    def set_perception_frame(self, frame: PerceptionFrame | None) -> None:
         with self._lock:
             self._perception_frame = frame
 
-    def set_world_state(self, world: Optional[WorldState]) -> None:
+    def set_world_state(self, world: WorldState | None) -> None:
         with self._lock:
             self._world_state = world
 
-    def set_planner_decision(self, decision: Optional[PlannerDecision]) -> None:
+    def set_planner_decision(self, decision: PlannerDecision | None) -> None:
         with self._lock:
             self._planner_decision = decision
 
-    def set_manual_command(self, command: Optional[ManualCommand]) -> None:
+    def set_manual_command(self, command: ManualCommand | None) -> None:
         with self._lock:
             self._manual_command = command
 
-    def set_control_targets(self, targets: Optional[ControlTargets]) -> None:
+    def set_control_targets(self, targets: ControlTargets | None) -> None:
         with self._lock:
             self._control_targets = targets
 
-    def set_pipeline_snapshot(self, perception: Optional[PerceptionFrame], world: Optional[WorldState], decision: Optional[PlannerDecision], control: Optional[ControlTargets]) -> None:
+    def set_pipeline_snapshot(self, perception: PerceptionFrame | None, world: WorldState | None, decision: PlannerDecision | None, control: ControlTargets | None) -> None:
         with self._lock:
             self._perception_frame = perception
             self._world_state = world

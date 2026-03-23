@@ -152,7 +152,7 @@ def detect_line_pose_from_jpeg(
 
     return lateral_error, heading_error, confidence
 
-def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None, float | None, MatLike]:
+def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None, float | None, float, MatLike]:
     """
     Detect line direction and curvature from a top-down camera frame.
 
@@ -160,6 +160,7 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         angle (rad)      : heading direction of the line
         curvature        : curvature of fitted polynomial
         offset           : horizontal offset from image center in range [-1, 1]
+        confidence       : line detection confidence in range [0, 1]
         debug_image      : visualization image
     """
 
@@ -180,12 +181,15 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     if len(contours) == 0:
-        return None, None, None, frame 
+        return None, None, None, 0.0, frame 
 
     # Use the largest contour as the line
     contour = max(contours, key=cv2.contourArea)
 
     points = contour[:,0,:]
+
+    if len(points) < 3:
+        return None, None, None, 0.0, frame
 
     x = points[:,0]
     y = points[:,1]
@@ -205,7 +209,30 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     # Offset from image center
     x_line = a*y_eval**2 + b*y_eval + c
     center = frame.shape[1] / 2
-    offset = (x_line - center) / center
+    offset = float(np.clip((x_line - center) / center, -1.0, 1.0))
+
+    # Confidence estimate from contour quality + fit quality
+    h, w = frame.shape[:2]
+    frame_area = float(h * w)
+    contour_area = float(cv2.contourArea(contour))
+    area_score = float(np.clip(contour_area / (0.12 * frame_area), 0.0, 1.0))
+
+    y_span = float(y.max() - y.min())
+    vertical_coverage = float(np.clip(y_span / max(1.0, float(h)), 0.0, 1.0))
+
+    x_fit = a * y**2 + b * y + c
+    rmse = float(np.sqrt(np.mean((x - x_fit) ** 2)))
+    fit_score = float(np.clip(1.0 - (rmse / max(1.0, 0.2 * w)), 0.0, 1.0))
+
+    point_score = float(np.clip(len(points) / 250.0, 0.0, 1.0))
+    confidence = float(np.clip(
+        0.35 * area_score +
+        0.30 * vertical_coverage +
+        0.25 * fit_score +
+        0.10 * point_score,
+        0.0,
+        1.0,
+    ))
 
     # Debug visualization
     debug = frame.copy()
@@ -216,8 +243,18 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
             _ = cv2.circle(debug, (xi, yi), 2, (0, 255, 0), -1)
 
     _ = cv2.drawContours(debug, [contour], -1, (255,0,0), 2)
+    _ = cv2.putText(
+        debug,
+        f"slope: {float(slope):.3f}",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
 
-    return angle, curvature, offset, debug
+    return angle, curvature, offset, confidence, debug
 
 
     
