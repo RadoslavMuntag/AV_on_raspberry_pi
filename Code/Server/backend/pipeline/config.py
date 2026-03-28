@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from re import DEBUG
+from dataclasses import fields
+from pathlib import Path
+from typing import cast
 
 @dataclass(slots=True)
 class PipelineConfig:
@@ -30,6 +34,52 @@ class PipelineConfig:
     wheel_radius: float = 1.25 # radius of the wheels in cm, used for kinematic calculations
 
     DEBUG: bool = False
+
+    @classmethod
+    def from_json_file(cls, json_path: str | Path) -> PipelineConfig:
+        path = Path(json_path)
+        with path.open("r", encoding="utf-8") as f:
+            payload_obj = cast(object, json.load(f))
+
+        if not isinstance(payload_obj, dict):
+            raise ValueError("Config JSON root must be an object")
+        payload_map = cast(dict[object, object], payload_obj)
+
+        payload: dict[str, object] = {}
+        for raw_key, raw_value in payload_map.items():
+            if not isinstance(raw_key, str):
+                raise TypeError("Config JSON keys must be strings")
+            payload[raw_key] = raw_value
+
+        cfg = cls()
+        cfg.update_from_mapping(payload)
+        return cfg
+
+    def update_from_mapping(self, values: Mapping[str, object]) -> None:
+        valid_keys = {f.name for f in fields(self)}
+        unknown_keys = [k for k in values.keys() if k not in valid_keys]
+        if unknown_keys:
+            joined = ", ".join(sorted(unknown_keys))
+            raise KeyError(f"Unknown config keys: {joined}")
+
+        for key, raw_value in values.items():
+            current = cast(object, getattr(self, key))
+            if isinstance(current, bool):
+                if not isinstance(raw_value, bool):
+                    raise TypeError(f"Config key '{key}' expects bool")
+                cast_value: object = raw_value
+            elif isinstance(current, int):
+                if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+                    raise TypeError(f"Config key '{key}' expects int")
+                cast_value = int(raw_value)
+            elif isinstance(current, float):
+                if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+                    raise TypeError(f"Config key '{key}' expects float")
+                cast_value = float(raw_value)
+            else:
+                cast_value = raw_value
+
+            setattr(self, key, cast_value)
 
 
 

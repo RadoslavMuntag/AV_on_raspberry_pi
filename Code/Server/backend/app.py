@@ -134,6 +134,11 @@ async def dualsense_connect() -> ApiMessage:
         raise HTTPException(status_code=404, detail="DualSense controller not found")
     return ApiMessage(message="dualsense connected")
 
+@app.post("/api/config/pipeline/reload", response_model=ApiMessage)
+async def reload_pipeline_config() -> ApiMessage:
+    if not runtime.reload_pipeline_config():
+        raise HTTPException(status_code=500, detail="Failed to reload pipeline config")
+    return ApiMessage(message="pipeline config reloaded")
 
 # @app.post("/api/controller/dualsense/disconnect", response_model=ApiMessage)
 # async def dualsense_disconnect() -> ApiMessage:

@@ -10,22 +10,72 @@ let wsSeq = 0;
 let currentMode = 'idle';
 let telemetryEnabled = true;
 let videoEnabled = true;
+let toastHost;
 
 let AUTO_ACQUIRE = true; // set to false to disable auto acquire on page load
 
 function clientId() { return clientIdEl.value || 'web-local'; }
 
-async function post(url, body) {
+function ensureToastHost() {
+  if (toastHost) return toastHost;
+  toastHost = document.createElement('div');
+  toastHost.className = 'toast-host';
+  document.body.appendChild(toastHost);
+  return toastHost;
+}
+
+function notify(message, kind = 'success') {
+  const host = ensureToastHost();
+  const toast = document.createElement('div');
+  toast.className = `toast ${kind}`;
+  toast.textContent = message;
+  host.appendChild(toast);
+
+  window.setTimeout(() => {
+    toast.classList.add('hide');
+    window.setTimeout(() => {
+      if (toast.parentNode === host) host.removeChild(toast);
+    }, 220);
+  }, 1800);
+}
+
+function extractMessage(payload, fallback) {
+  if (payload && typeof payload === 'object' && typeof payload.message === 'string' && payload.message) {
+    return payload.message;
+  }
+  return fallback;
+}
+
+function extractErrorMessage(text, fallback) {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.detail === 'string') {
+      return parsed.detail;
+    }
+  } catch (_) {}
+  return text || fallback;
+}
+
+async function post(url, body, options = {}) {
+  const { notifyOnSuccess = true, successMessage = 'Request handled', errorMessage = 'Request failed' } = options;
   const res = await fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body)
   });
+
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text);
+    const msg = extractErrorMessage(text, errorMessage);
+    notify(msg, 'error');
+    throw new Error(msg);
   }
-  return res.json();
+
+  const payload = await res.json();
+  if (notifyOnSuccess) {
+    notify(extractMessage(payload, successMessage), 'success');
+  }
+  return payload;
 }
 
 async function acquire() {
@@ -45,15 +95,19 @@ async function setMode() {
 async function drive() {
   const left = Number(document.getElementById('left').value);
   const right = Number(document.getElementById('right').value);
-  await fetch(`/api/control/drive?client_id=${encodeURIComponent(clientId())}`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({left, right})
-  });
+  await post(
+    `/api/control/drive?client_id=${encodeURIComponent(clientId())}`,
+    {left, right},
+    {successMessage: 'drive command applied'}
+  );
 }
 
 async function connectDualSense() {
   await post('/api/controller/dualsense/connect', {client_id: clientId()});
+}
+
+async function reloadPipelineConfig() {
+  await post('/api/config/pipeline/reload', {});
 }
 
 async function stopNow() {
@@ -69,7 +123,7 @@ async function setModeSafeStop() {
 
 async function heartbeat() {
   try {
-    await post('/api/controller/heartbeat', {client_id: clientId()});
+    await post('/api/controller/heartbeat', {client_id: clientId()}, {notifyOnSuccess: false});
   } catch (_) {}
 }
 

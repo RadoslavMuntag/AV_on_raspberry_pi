@@ -52,6 +52,31 @@ class RuntimeManager:
 
         _ = self.connect_dualsense()
 
+    
+    async def stop(self) -> None:
+        self._running = False
+
+        tasks = []
+
+        if self._telemetry_task:
+            self._telemetry_task.cancel()
+            tasks.append(self._telemetry_task)
+        if self._control_task:
+            self._control_task.cancel()
+            tasks.append(self._control_task)
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self.hardware.stop()
+        self.state_store.update_state(
+            camera_streaming=False,
+            hardware_ready=False,
+            controller_id=None,
+            left_motor=0,
+            right_motor=0,
+        )
+
     def connect_dualsense(self) -> bool:
         if not self._dualsense:
             self._dualsense = DualSense(self.state_store, self.submit_manual_command)
@@ -65,21 +90,6 @@ class RuntimeManager:
         else:
             print("DualSense controller not found. Continuing without controller.")
             return False
-
-    async def stop(self) -> None:
-        self._running = False
-        if self._telemetry_task:
-            self._telemetry_task.cancel()
-        if self._control_task:
-            self._control_task.cancel()
-        self.hardware.stop()
-        self.state_store.update_state(
-            camera_streaming=False,
-            hardware_ready=False,
-            controller_id=None,
-            left_motor=0,
-            right_motor=0,
-        )
 
     def acquire_controller(self, client_id: str) -> bool:
         snap = self.state_store.snapshot()["state"]
@@ -112,6 +122,18 @@ class RuntimeManager:
             if mode != BehaviorState.SAFE_STOP:
                 self.state_store.update_state(e_stop=False)
         self.state_store.update_state(mode=mode)
+
+    def clear_e_stop(self) -> None:
+        self.state_store.update_state(e_stop=False)
+
+    def reload_pipeline_config(self, json_path: str = "backend/config/pipeline.json") -> bool:
+        try:
+            _ = self.pipeline.load_config_from_json(json_path)
+            print("Pipeline config reloaded successfully.")
+            return True
+        except Exception as e:
+            print(f"Error loading pipeline config: {e}")
+            return False
 
     def drive(self, client_id: str, left: int, right: int) -> bool:
         snap = self.state_store.snapshot()
@@ -159,83 +181,89 @@ class RuntimeManager:
             )
 
     async def _telemetry_loop(self) -> None:
-        while self._running:
-            self.state_store.update_state(
-                ultrasonic_cm=self.hardware.read_ultrasonic(),
-                #infrared_value=self.hardware.read_infrared(),
-                hardware_ready=self.hardware.ready,
-                hardware_error=self.hardware.error,
-            )
-            await asyncio.sleep(1)
+        try:
+            while self._running:
+                self.state_store.update_state(
+                    ultrasonic_cm=self.hardware.read_ultrasonic(),
+                    #infrared_value=self.hardware.read_infrared(),
+                    hardware_ready=self.hardware.ready,
+                    hardware_error=self.hardware.error,
+                )
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
 
     async def _control_loop(self) -> None:
-        last_t = time.perf_counter()
-        while self._running:
-            now = time.perf_counter()
-            dt = now - last_t
-            last_t = now
+        try:
+            last_t = time.perf_counter()
+            while self._running:
+                now = time.perf_counter()
+                dt = now - last_t
+                last_t = now
 
-            snap = self.state_store.snapshot()
-            state = snap["state"]
-            cfg = snap["config"]
-            loop_delay = 1.0 / cfg["control_loop_hz"]
+                snap = self.state_store.snapshot()
+                state = snap["state"]
+                cfg = snap["config"]
+                loop_delay = 1.0 / cfg["control_loop_hz"]
 
-            timed_out = self.state_store.should_timeout_controller()
-            if timed_out:
+                timed_out = self.state_store.should_timeout_controller()
+                if timed_out:
+                    self.state_store.update_state(
+                        controller_id=None,
+                        mode=BehaviorState.SAFE_STOP,
+                        e_stop=True,
+                    )
+
+                requested_mode = state["mode"]
+                heartbeat_ok = True
+                if requested_mode == BehaviorState.MANUAL:
+                    heartbeat_ok = (state["controller_id"] is not None) and (not timed_out)
+
+                with self._manual_cmd_lock:
+                    cmd_for_tick = ManualCommand(
+                        throttle=self._manual_cmd.throttle,
+                        steer=self._manual_cmd.steer,
+                        active=(requested_mode == BehaviorState.MANUAL and heartbeat_ok),
+                    )
+
+                pipe = self.pipeline.tick(
+                    hardware=self.hardware,
+                    requested_mode=requested_mode,
+                    heartbeat_ok=heartbeat_ok and not state["e_stop"],
+                    manual_cmd=cmd_for_tick,
+                    dt=dt,
+                )
+
+                self.state_store.set_pipeline_snapshot(
+                    perception=pipe.perception, 
+                    world=pipe.world, 
+                    decision=pipe.decision, 
+                    control=pipe.control
+                    )
+
+                self.state_store.set_manual_command(cmd_for_tick)
+
+                requested_mode = self.state_store.snapshot()["state"]["requested_mode"]
+                temp_mode = requested_mode if requested_mode is not None else pipe.decision.state.value
+
                 self.state_store.update_state(
-                    controller_id=None,
-                    mode=BehaviorState.SAFE_STOP,
-                    e_stop=True,
+                    mode=temp_mode,
+                    requested_mode=None,
+                    left_motor=pipe.control.left_pwm,
+                    right_motor=pipe.control.right_pwm,
+                    ultrasonic_cm=pipe.perception.ultrasonic_cm,
+                    hardware_ready=self.hardware.ready,
+                    hardware_error=self.hardware.error,
                 )
 
-            requested_mode = state["mode"]
-            heartbeat_ok = True
-            if requested_mode == BehaviorState.MANUAL:
-                heartbeat_ok = (state["controller_id"] is not None) and (not timed_out)
+                self._control_fps_frames += 1
+                elapsed = now - self._control_fps_t0
+                if elapsed >= 1.0:
+                    self.control_loop_fps = self._control_fps_frames / elapsed
+                    self.state_store.update_state(fps=self.control_loop_fps)
+                    self._control_fps_frames = 0
+                    self._control_fps_t0 = now
 
-            with self._manual_cmd_lock:
-                cmd_for_tick = ManualCommand(
-                    throttle=self._manual_cmd.throttle,
-                    steer=self._manual_cmd.steer,
-                    active=(requested_mode == BehaviorState.MANUAL and heartbeat_ok),
-                )
-
-            pipe = self.pipeline.tick(
-                hardware=self.hardware,
-                requested_mode=requested_mode,
-                heartbeat_ok=heartbeat_ok and not state["e_stop"],
-                manual_cmd=cmd_for_tick,
-                dt=dt,
-            )
-
-            self.state_store.set_pipeline_snapshot(
-                perception=pipe.perception, 
-                world=pipe.world, 
-                decision=pipe.decision, 
-                control=pipe.control
-                )
-
-            self.state_store.set_manual_command(cmd_for_tick)
-
-            requested_mode = self.state_store.snapshot()["state"]["requested_mode"]
-            temp_mode = requested_mode if requested_mode is not None else pipe.decision.state.value
-
-            self.state_store.update_state(
-                mode=temp_mode,
-                requested_mode=None,
-                left_motor=pipe.control.left_pwm,
-                right_motor=pipe.control.right_pwm,
-                ultrasonic_cm=pipe.perception.ultrasonic_cm,
-                hardware_ready=self.hardware.ready,
-                hardware_error=self.hardware.error,
-            )
-
-            self._control_fps_frames += 1
-            elapsed = now - self._control_fps_t0
-            if elapsed >= 1.0:
-                self.control_loop_fps = self._control_fps_frames / elapsed
-                self.state_store.update_state(fps=self.control_loop_fps)
-                self._control_fps_frames = 0
-                self._control_fps_t0 = now
-
-            await asyncio.sleep(loop_delay)
+                await asyncio.sleep(loop_delay)
+        except asyncio.CancelledError:
+            pass
