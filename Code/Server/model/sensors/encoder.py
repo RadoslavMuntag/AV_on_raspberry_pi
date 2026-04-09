@@ -15,17 +15,28 @@ class MotorEncoder:
         )
         self.ticks_per_revolution: int = ticks_per_revolution
         self.current_ticks: int = 0
+        self.total_ticks: int = 0
+
 
         self.encoder.when_activated = self._update_ticks
 
     def _update_ticks(self) -> None:
         self.current_ticks += 1
+        self.total_ticks += 1
 
     def reset(self) -> None:
         self.current_ticks = 0
 
     def get_distance(self, wheel_circumference: float) -> float:
+        """Calculate distance traveled based on current ticks and wheel circumference.
+            USE BEFORE CALLING reset() OR get_speed() TO AVOID LOSING TICK COUNT
+        """
         revolutions = self.current_ticks / self.ticks_per_revolution
+        return revolutions * wheel_circumference
+
+    def get_total_distance(self, wheel_circumference: float) -> float:
+        """Return the cumulative distance traveled since the encoder was created."""
+        revolutions = self.total_ticks / self.ticks_per_revolution
         return revolutions * wheel_circumference
 
     def get_speed(self, wheel_circumference: float, dt: float) -> float:

@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
+from backend.services import runtime
+
 from ..contracts import BehaviorState, ManualCommand, PerceptionFrame, WorldState, PlannerDecision, ControlTargets
 
 
@@ -31,6 +33,7 @@ class VehicleState:
     dualsense_connected: bool = False
     hardware_ready: bool = False
     hardware_error: str | None = None
+    runtime_error: str | None = None
     fps: float | None = None
     updated_at: float = field(default_factory=lambda: time.time())
 

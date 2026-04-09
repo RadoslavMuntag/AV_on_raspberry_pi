@@ -9,12 +9,23 @@ from typing import cast
 
 @dataclass(slots=True)
 class PipelineConfig:
-    obstacle_threshold_cm: float = 25.0
+    obstacle_threshold_cm: float = 35.0
     max_sensor_age_s: float = 0.25
 
-    cruise_speed: float = 30.0 # in cm/s
+    obstacle_turn_distance_factor: float = 0.5  # multiplier for the number of 90-degree turns to perform when avoiding an obstacle (should be less then 1.0, since robot will likely overshoot a perfect 90-degree turn)
+    obstacle_forward_distance_cm: float = 10.0
+    obstacle_forward_distance_2_cm: float = 20.0
+    obstacle_reacquire_min_forward_cm: float = 8.0
+    obstacle_turn_speed: float = 0.13
+    obstacle_turn_slow_speed: float = 0.1
+    obstacle_forward_speed: float = 0.28
+    obstacle_forward_slow_speed: float = 0.12
+    obstacle_reacquire_speed: float = 0.18
+    obstacle_reacquire_slow_speed: float = 0.1
+    obstacle_slowdown_ratio: float = 0.8
+
+    cruise_speed: float = 23.0 # in cm/s
     no_lane_speed: float = 10.0 # in cm/s
-    avoid_turn: float = 0.6
 
     # PID controller parameters
     speed_kp: float = 0.019

@@ -201,3 +201,21 @@ class VehicleHardware:
             except Exception:
                 return None
         return None
+
+    def read_left_encoder_distance(self, wheel_radius: float) -> float | None:
+        """Returns cumulative distance in cm from the left motor encoder, or None if error."""
+        if self._car:
+            try:
+                return self._car.left_encoder.get_total_distance(wheel_radius * 2 * math.pi)
+            except Exception:
+                return None
+        return None
+    
+    def read_right_encoder_distance(self, wheel_radius: float) -> float | None:
+        """Returns cumulative distance in cm from the right motor encoder, or None if error."""
+        if self._car:
+            try:
+                return self._car.right_encoder.get_total_distance(wheel_radius * 2 * math.pi)
+            except Exception:
+                return None
+        return None

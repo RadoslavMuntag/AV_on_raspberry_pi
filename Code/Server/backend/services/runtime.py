@@ -8,6 +8,8 @@ import time
 import threading
 from _thread import lock
 
+from typing_extensions import runtime
+
 from .hardware import VehicleHardware
 from .state import StateStore
 from ..pipeline.pipeline import ModularPipeline
@@ -266,4 +268,9 @@ class RuntimeManager:
 
                 await asyncio.sleep(loop_delay)
         except asyncio.CancelledError:
+            print("Control loop cancelled, stopping motors.")
             pass
+        except Exception as exc:
+            print(f"Exception in control loop: {exc}")
+            self.hardware.stop_motors()
+            self.state_store.update_state(left_motor=0, right_motor=0, runtime_error=str(exc))

@@ -7,7 +7,7 @@ from ..contracts import PerceptionFrame, WorldState, SensorType
 
 class FusionModule:
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
-        self.cfg = cfg or PipelineConfig()
+        self.cfg: PipelineConfig = cfg or PipelineConfig()
 
     def fuse(self, p: PerceptionFrame) -> WorldState:
         ts = time.monotonic()
@@ -27,6 +27,9 @@ class FusionModule:
             line_angle=float(p.line_angle or 0.0),
             line_curvature=float(p.line_curvature or 0.0),
 
+            left_distance=float(p.left_distance or 0.0),
+            right_distance=float(p.right_distance or 0.0),
+
             left_speed=float(p.left_speed or 0.0),
             right_speed=float(p.right_speed or 0.0),
 
@@ -34,6 +37,8 @@ class FusionModule:
                 SensorType.ULTRASONIC: p.ultrasonic_cm is not None,
                 SensorType.INFRARED: False,
                 SensorType.CAMERA: p.camera_ok,
+                SensorType.LEFT_ENCODER: p.left_speed is not None,
+                SensorType.RIGHT_ENCODER: p.right_speed is not None,
             },
             stale=stale,
         )

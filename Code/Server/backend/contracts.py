@@ -35,6 +35,17 @@ class SensorType(str, Enum):
     ULTRASONIC = "ultrasonic"
     INFRARED = "infrared"
     CAMERA = "camera"
+    LEFT_ENCODER = "left_encoder"
+    RIGHT_ENCODER = "right_encoder"
+
+
+class ObstacleAvoidPhase(str, Enum):
+    TURN_OUT = "turn_out"
+    DRIVE_FORWARD_1 = "drive_forward_1"
+    TURN_BACK_1 = "turn_back_1"
+    DRIVE_FORWARD_2 = "drive_forward_2"
+    TURN_BACK_2 = "turn_back_2"
+    REACQUIRE_FORWARD = "reacquire_forward"
 
 @dataclass(slots=True)
 class ManualCommand:
@@ -47,6 +58,9 @@ class ManualCommand:
 class PerceptionFrame:
     ts: float
     ultrasonic_cm: float | None
+
+    left_distance: float | None
+    right_distance: float | None
 
     left_speed: float | None = None
     right_speed: float | None = None
@@ -71,6 +85,9 @@ class WorldState:
     line_angle: float
     line_curvature: float
 
+    left_distance: float
+    right_distance: float
+
     left_speed: float
     right_speed: float
 
@@ -86,6 +103,9 @@ class PlannerDecision:
     desired_speed: float  # [0, 1]
     desired_turn: float   # [-1, 1]
     safe_stop: bool = False
+    avoid_phase: ObstacleAvoidPhase | None = None
+    avoid_progress_cm: float | None = None
+    avoid_target_cm: float | None = None
 
 
 @dataclass(slots=True)

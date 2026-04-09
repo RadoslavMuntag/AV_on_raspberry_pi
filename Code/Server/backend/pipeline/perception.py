@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+
 from .config import PipelineConfig
 from ..contracts import PerceptionFrame, InfraredState
 from ..services.hardware import VehicleHardware
@@ -18,10 +19,13 @@ class PerceptionModule:
         ultrasonic = hardware.read_ultrasonic()
         if ultrasonic is None:
             faults.append("ultrasonic_unavailable")
-
+        
+        left_distance = hardware.read_left_encoder_distance(self.cfg.wheel_radius)
         left_speed = hardware.read_left_encoder(self.cfg.wheel_radius, dt)
         if left_speed is None:
             faults.append("left_encoder_unavailable")
+
+        right_distance = hardware.read_right_encoder_distance(self.cfg.wheel_radius)
         right_speed = hardware.read_right_encoder(self.cfg.wheel_radius, dt)
         if right_speed is None:
             faults.append("right_encoder_unavailable")
@@ -54,6 +58,10 @@ class PerceptionModule:
         return PerceptionFrame(
             ts=ts,
             ultrasonic_cm=ultrasonic,
+
+            left_distance=left_distance,
+            right_distance=right_distance,
+
             left_speed=left_speed,
             right_speed=right_speed,
 

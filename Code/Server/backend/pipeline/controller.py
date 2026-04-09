@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from operator import is_
 import time
 
 from backend.pipeline.config import PipelineConfig
 from backend.misc.PID import SpeedPIDController
-from backend.contracts import BehaviorState, ControlTargets, LedMode, ManualCommand, PerceptionFrame, PlannerDecision, WorldState
+from backend.contracts import BehaviorState, ControlTargets, LedMode, ManualCommand, PlannerDecision, WorldState
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
@@ -15,12 +14,12 @@ class DifferentialDriveController:
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg: PipelineConfig = cfg or PipelineConfig()
         
-        self.left_pid = SpeedPIDController(
+        self.left_pid: SpeedPIDController = SpeedPIDController(
             kp=self.cfg.speed_kp,
             ki=self.cfg.speed_ki,
             kd=self.cfg.speed_kd
         )
-        self.right_pid = SpeedPIDController(
+        self.right_pid: SpeedPIDController = SpeedPIDController(
             kp=self.cfg.speed_kp,
             ki=self.cfg.speed_ki,
             kd=self.cfg.speed_kd
@@ -89,7 +88,7 @@ class DifferentialDriveController:
             gain_left, gain_right = self.left_pid.update(world.left_speed, dt), self.right_pid.update(world.right_speed, dt)
             left, right = self._map_gain_to_pwm(gain_left), self._map_gain_to_pwm(gain_right)
 
-            return ControlTargets(now, left, right, "index", (0, 255, 0))
+            return ControlTargets(now, left, right, LedMode.INDEX, (0, 255, 0))
             #return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
 
         if decision.state == BehaviorState.OBSTACLE_AVOID:
