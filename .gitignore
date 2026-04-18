@@ -132,3 +132,4 @@ Thumbs.db
 # Project specific
 Code/Client/IP.txt
 Code/Server/systemd-service/av-server.service
+Code/Server/backend/misc/snapshots

@@ -171,7 +171,7 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         raise ValueError("Failed to decode JPEG bytes into an image")
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV) 
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     ## implemet roi mask to focus on bottom half of image
     h, w = binary.shape
@@ -205,7 +205,8 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     a, b, c = coeffs
 
     # Heading angle (slope at bottom of image)
-    y_eval = frame.shape[0]
+    lookahead_ratio = 0.85 
+    y_eval = frame.shape[0] * lookahead_ratio
     slope = 2*a*y_eval + b
     angle = np.arctan(slope)
 

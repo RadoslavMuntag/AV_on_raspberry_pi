@@ -1,16 +1,16 @@
 {
-    "obstacle_threshold_cm": 45.0,
+    "obstacle_threshold_cm": 42.0,
     "max_sensor_age_s": 0.25,
 
-    "obstacle_forward_distance_cm": 8.0,
-    "obstacle_forward_distance_2_cm": 4.0,
-    "obstacle_turn_speed": 0.26,
-    "obstacle_turn_slow_speed": 0.24,
+    "obstacle_forward_distance_cm": 10.0,
+    "obstacle_forward_distance_2_cm": 5.0,
+    "obstacle_turn_speed": 0.29,
+    "obstacle_turn_slow_speed": 0.27,
     "obstacle_forward_speed": 0.28,
     "obstacle_forward_slow_speed": 0.12,
     "obstacle_slowdown_ratio": 0.8,
     
-    "cruise_speed": 25.0,
+    "cruise_speed": 23.0,
     "no_lane_speed": 10.0,
 
     "speed_kp": 0.019,
@@ -20,8 +20,8 @@
     "max_pwm": 4096,
     "min_pwm": 0,
 
-    "line_kp": 1.8,
-    "line_angle_kp": 1.2,
+    "line_kp": 2.5,
+    "line_angle_kp": 1.0,
     "line_curvature_speed_gain": 50.0,
     "line_min_speed_factor": 0.45,
     "min_confidence": 0.25,

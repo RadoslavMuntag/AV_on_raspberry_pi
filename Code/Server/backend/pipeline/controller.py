@@ -92,6 +92,8 @@ class DifferentialDriveController:
             #return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
 
         if decision.state == BehaviorState.OBSTACLE_AVOID:
+            self.left_pid.reset()
+            self.right_pid.reset()
             left, right = self._mix(decision.desired_speed, decision.desired_turn)
             return ControlTargets(now, left, right, LedMode.INDEX, (255, 0, 255))
 

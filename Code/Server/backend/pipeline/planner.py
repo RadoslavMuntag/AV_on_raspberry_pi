@@ -295,11 +295,15 @@ class BehaviorPlanner:
         if not world.lane_detected:
             return self._build_decision(now, self.current_state, "line_lost", 0.0, 0.0)
 
-        speed = self.cfg.cruise_speed * max(
-            self.cfg.line_min_speed_factor,
-            1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature),
-        )
-        turn = self.cfg.line_kp * world.line_offset + self.cfg.line_angle_kp * (-world.line_angle)
+        speed = self.cfg.cruise_speed
+        if self.cfg.adaptive_speed:
+            speed = self.cfg.cruise_speed * max(
+                self.cfg.line_min_speed_factor,
+                1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature),
+            )
+
+
+        turn = self.cfg.line_kp * (-world.line_offset) + self.cfg.line_angle_kp * world.line_angle
         return self._build_decision(now, self.current_state, "line_follow_nominal", speed, turn)
 
     def _line_follow_with_obstacle(self, now: float, world: WorldState) -> PlannerDecision:

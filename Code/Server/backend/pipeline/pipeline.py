@@ -38,9 +38,9 @@ class ModularPipeline:
         self.planner: BehaviorPlanner = planner or BehaviorPlanner(cfg=self.config)
         self.controller: DifferentialDriveController = controller or DifferentialDriveController(cfg=self.config)
 
-        if config is not None:
+        if config is None:
             try:
-                self.load_config_from_json("config/pipeline.json")
+                self.load_config_from_json("backend/config/pipeline.json")
             except Exception as e:
                 print(f"Error loading pipeline config: {e}, falling back to defaults")
                 

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import fields
 from pathlib import Path
+from sqlite3 import adapt
 from typing import cast
 
 @dataclass(slots=True)
@@ -15,7 +16,7 @@ class PipelineConfig:
     obstacle_turn_distance_factor: float = 0.5  # multiplier for the number of 90-degree turns to perform when avoiding an obstacle (should be less then 1.0, since robot will likely overshoot a perfect 90-degree turn)
     obstacle_forward_distance_cm: float = 10.0
     obstacle_forward_distance_2_cm: float = 20.0
-    obstacle_reacquire_min_forward_cm: float = 8.0
+    obstacle_reacquire_min_forward_cm: float = 0.0
     obstacle_turn_speed: float = 0.13
     obstacle_turn_slow_speed: float = 0.1
     obstacle_forward_speed: float = 0.28
@@ -24,6 +25,7 @@ class PipelineConfig:
     obstacle_reacquire_slow_speed: float = 0.1
     obstacle_slowdown_ratio: float = 0.8
 
+    adaptive_speed: bool = False # whether to automatically reduce speed based on curvatre 
     cruise_speed: float = 23.0 # in cm/s
     no_lane_speed: float = 10.0 # in cm/s
 
