@@ -4,155 +4,22 @@ import cv2
 from cv2.typing import MatLike
 import numpy as np
 
-def detect_line_error_from_jpeg(
+def detect_line_geometry(
     jpeg_bytes: bytes,
-    canny_low: int = 60,
-    canny_high: int = 150,
-    hough_threshold: int = 30,
-    min_line_length: int = 25,
-    max_line_gap: int = 20,
-) -> tuple[float | None, float]:
-    """
-    Returns:
-      line_error: normalized in [-1, 1], negative=left, positive=right
-      confidence: [0, 1]
-    """
-    arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if frame is None:
-        return None, 0.0
-
-    h, w = frame.shape[:2]
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blur, canny_low, canny_high)
-
-    # ROI: lower half only
-    mask = np.zeros_like(edges)
-    roi = np.array([[
-        (0, h),
-        (w, h),
-        (int(0.65 * w), int(0.55 * h)),
-        (int(0.35 * w), int(0.55 * h)),
-    ]], dtype=np.int32)
-    cv2.fillPoly(mask, roi, 255)
-    roi_edges = cv2.bitwise_and(edges, mask)
-
-    lines = cv2.HoughLinesP(
-        roi_edges,
-        rho=1,
-        theta=np.pi / 180.0,
-        threshold=hough_threshold,
-        minLineLength=min_line_length,
-        maxLineGap=max_line_gap,
-    )
-
-    if lines is None or len(lines) == 0:
-        return None, 0.0
-
-    # Robust center estimate from detected segments
-    x_samples: list[float] = []
-    y_ref = h - 10
-
-    for l in lines[:, 0]:
-        x1, y1, x2, y2 = map(float, l)
-        dx = x2 - x1
-        dy = y2 - y1
-
-        # Ignore near-horizontal noise
-        if abs(dy) < 5:
-            continue
-
-        # Interpolate x at y_ref on this segment's line
-        t = (y_ref - y1) / (dy if dy != 0 else 1e-6)
-        x_at_ref = x1 + t * dx
-        if 0 <= x_at_ref <= w:
-            x_samples.append(x_at_ref)
-
-    if not x_samples:
-        return None, 0.0
-
-    lane_x = float(np.median(x_samples))
-    center_x = w / 2.0
-    err = (lane_x - center_x) / (w / 2.0)  # [-1, 1] approx
-    err = max(-1.0, min(1.0, err))
-
-    confidence = min(1.0, len(x_samples) / 12.0)
-    return err, confidence
-
-def detect_line_pose_from_jpeg(
-    jpeg_bytes: bytes,
-    roi_y_start: float = 0.35,      # use lower 65% of frame
-    min_pixels_per_row: int = 6,
-) -> tuple[float | None, float | None, float]:
-    """
-    Returns:
-      lateral_error: normalized [-1, 1], negative=left, positive=right
-      heading_error: normalized [-1, 1], negative=line points left, positive=right
-      confidence: [0, 1]
-    """
-    arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if frame is None:
-        return None, None, 0.0
-
-    h, w = frame.shape[:2]
-    y0 = int(max(0, min(h - 1, roi_y_start * h))) # 
-    roi = frame[y0:h, :]
-
-    # 1) Segment line (choose one strategy depending on your line color)
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    # For bright line on dark floor:
-    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    # If your line is dark on bright floor, invert:
-    # _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-    # 2) Morphology for cleanup
-    k = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k, iterations=1)
-    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k, iterations=2)
-
-    # 3) Scanlines from near (bottom) to far (top of ROI)
-    ys = np.linspace(bw.shape[0] - 5, 5, num=12).astype(int)
-    pts_x = []
-    pts_y = []
-
-    for y in ys:
-        xs = np.where(bw[y, :] > 0)[0]
-        if xs.size >= min_pixels_per_row:
-            x_center = float(np.median(xs))
-            pts_x.append(x_center)
-            pts_y.append(float(y))
-
-    if len(pts_x) < 3:
-        return None, None, 0.0
-
-    # 4) Fit x(y) = a*y + b
-    a, b = np.polyfit(np.array(pts_y), np.array(pts_x), 1)
-
-    # near point in ROI coordinates
-    y_near = float(bw.shape[0] - 1)
-    x_near = a * y_near + b
-
-    # convert to full-frame x (ROI starts at y0, x unchanged)
-    center_x = w / 2.0
-    lateral_error = (x_near - center_x) / (w / 2.0)
-    lateral_error = float(np.clip(lateral_error, -1.0, 1.0))
-
-    # heading proxy from slope (scale for normalization)
-    heading_error = float(np.clip(a * 0.8, -1.0, 1.0))
-
-    # confidence from valid scanlines + mask density near bottom half
-    valid_ratio = len(pts_x) / len(ys)
-    density = float((bw[bw.shape[0] // 2 :, :] > 0).mean())
-    confidence = float(np.clip(0.75 * valid_ratio + 0.25 * min(1.0, density * 8.0), 0.0, 1.0))
-
-    return lateral_error, heading_error, confidence
-
-def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None, float | None, float, MatLike]:
+    obstacle_far_roi_ratio: float = 0.45,
+    obstacle_min_area_px: float = 200.0,
+    obstacle_px_per_cm: float = 8.0,
+    obstacle_distance_cm: float | None = None,
+    camera_diag_fov_deg: float = 75.0,
+) -> tuple[
+    float | None,
+    float | None,
+    float | None,
+    float,
+    float | None,
+    float | None,
+    MatLike,
+]:
     """
     Detect line direction and curvature from a top-down camera frame.
 
@@ -161,6 +28,8 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         curvature        : curvature of fitted polynomial
         offset           : horizontal offset from image center in range [-1, 1]
         confidence       : line detection confidence in range [0, 1]
+        obstacle_width_cm: estimated obstacle width in cm (None if unavailable)
+        obstacle_x_norm  : obstacle center in range [-1, 1] (None if unavailable)
         debug_image      : visualization image
     """
 
@@ -171,13 +40,65 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         raise ValueError("Failed to decode JPEG bytes into an image")
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, binary_full = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    ## implemet roi mask to focus on bottom half of image
-    h, w = binary.shape
-    mask = np.zeros_like(binary)
-    mask[int(h * 0.45):h, 0:w] = 255
-    binary = cv2.bitwise_and(binary, binary, mask=mask)
+    h, w = binary_full.shape
+    debug = frame.copy()
+
+    # Far-field obstacle probe (upper ROI).
+    obstacle_width_cm: float | None = None
+    obstacle_x_norm: float | None = None
+
+    far_h = int(np.clip(h * obstacle_far_roi_ratio, 0, h))
+    obstacle_mask = np.zeros_like(binary_full)
+    obstacle_mask[int(0.3 * h):far_h, :] = 255
+    obstacle_binary = cv2.bitwise_and(binary_full, binary_full, mask=obstacle_mask)
+
+    obstacle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    obstacle_binary = cv2.morphologyEx(obstacle_binary, cv2.MORPH_OPEN, obstacle_kernel)
+
+    obs_contours, _ = cv2.findContours(obstacle_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if obs_contours:
+        obs = max(obs_contours, key=cv2.contourArea)
+        obs_area = float(cv2.contourArea(obs))
+        if obs_area >= obstacle_min_area_px:
+            ox, oy, ow, oh = cv2.boundingRect(obs)
+            dynamic_px_per_cm: float | None = None
+            if (
+                obstacle_distance_cm is not None
+                and obstacle_distance_cm > 0.0
+                and camera_diag_fov_deg > 0.0
+            ):
+                diag_px = float(np.hypot(w, h))
+                half_diag_fov_rad = float(np.deg2rad(camera_diag_fov_deg * 0.5))
+                tan_half = float(np.tan(half_diag_fov_rad))
+                if tan_half > 1e-6:
+                    focal_px = (0.5 * diag_px) / tan_half
+                    dynamic_px_per_cm = focal_px / float(obstacle_distance_cm)
+
+            px_per_cm = float(obstacle_px_per_cm)
+            if dynamic_px_per_cm is not None and dynamic_px_per_cm > 1e-6:
+                px_per_cm = dynamic_px_per_cm
+
+            if px_per_cm > 1e-6:
+                obstacle_width_cm = float(ow) / px_per_cm
+            obstacle_x_norm = float(np.clip(((ox + (ow * 0.5)) - (w * 0.5)) / (w * 0.5), -1.0, 1.0))
+            _ = cv2.rectangle(debug, (ox, oy), (ox + ow, oy + oh), (0, 0, 255), 2)
+            _ = cv2.putText(
+                debug,
+                f"obs_w={obstacle_width_cm:.1f}cm x={obstacle_x_norm:.2f}" if obstacle_width_cm is not None else f"obs_x={obstacle_x_norm:.2f}",
+                (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
+    # Bottom ROI for lane tracking.
+    lane_mask = np.zeros_like(binary_full)
+    lane_mask[int(h * 0.45):h, 0:w] = 255
+    binary = cv2.bitwise_and(binary_full, binary_full, mask=lane_mask)
 
     # Remove noise
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
@@ -187,7 +108,7 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     if len(contours) == 0:
-        return None, None, None, 0.0, frame 
+        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, debug
 
     # Use the largest contour as the line
     contour = max(contours, key=cv2.contourArea)
@@ -195,7 +116,7 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
     points = contour[:,0,:]
 
     if len(points) < 3:
-        return None, None, None, 0.0, frame
+        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, debug
 
     x = points[:,0]
     y = points[:,1]
@@ -241,9 +162,6 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         1.0,
     ))
 
-    # Debug visualization
-    debug = frame.copy()
-
     for yi in range(0, frame.shape[0], 5):
         xi = int(a * yi**2 + b * yi + c)
         if 0 <= xi < frame.shape[1]:
@@ -261,7 +179,7 @@ def detect_line_geometry(jpeg_bytes: bytes) -> tuple[float | None, float | None,
         cv2.LINE_AA,
     )
 
-    return angle, curvature, offset, confidence, debug
+    return angle, curvature, offset, confidence, obstacle_width_cm, obstacle_x_norm, debug
 
 
 def detect_line_geometry_canny(jpeg_bytes: bytes):

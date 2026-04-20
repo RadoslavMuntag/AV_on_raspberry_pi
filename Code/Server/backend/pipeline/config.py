@@ -21,6 +21,7 @@ class PipelineConfig:
     obstacle_turn_slow_speed: float = 0.1
     obstacle_forward_speed: float = 0.28
     obstacle_forward_slow_speed: float = 0.12
+    obstacle_forward_redetect_hold_s: float = 0.25
     obstacle_reacquire_speed: float = 0.18
     obstacle_reacquire_slow_speed: float = 0.1
     obstacle_slowdown_ratio: float = 0.8
@@ -42,6 +43,13 @@ class PipelineConfig:
     line_curvature_speed_gain: float = 50.0
     line_min_speed_factor: float = 0.45
     min_confidence: float = 0.25
+
+    obstacle_far_roi_ratio: float = 0.45
+    obstacle_min_area_px: float = 200.0
+    obstacle_px_per_cm: float = 8.0
+    camera_diag_fov_deg: float = 75.0
+    obstacle_frame_width_cm: float = 30.0
+    obstacle_max_passable_width_cm: float = 15.0
 
     wheel_track: float = 14.0 # distance between tracks in cm, used for kinematic calculations
     wheel_radius: float = 1.25 # radius of the wheels in cm, used for kinematic calculations

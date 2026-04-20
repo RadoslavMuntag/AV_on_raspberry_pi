@@ -69,6 +69,8 @@ class PerceptionFrame:
     line_curvature: float | None = None  # in 1/m
     line_offset: float | None = None  # in range [-1, 1], normalized from pixels
     line_confidence: float = 0.0  # in range [0, 1]
+    obstacle_width_cm: float | None = None
+    obstacle_x_norm: float | None = None
 
     camera_ok: bool = True
     faults: list[str] = field(default_factory=list)
@@ -90,6 +92,11 @@ class WorldState:
 
     left_speed: float
     right_speed: float
+
+    obstacle_width_cm: float | None = None
+    obstacle_clearance_left: float = 1.0
+    obstacle_clearance_right: float = 1.0
+    obstacle_too_wide: bool = False
 
     sensor_health: dict[SensorType, bool] = field(default_factory=dict)
     stale: bool = False

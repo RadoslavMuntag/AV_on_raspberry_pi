@@ -4,39 +4,98 @@ import math
 import time
 
 from backend.pipeline.config import PipelineConfig
-from backend.contracts import BehaviorState, ObstacleAvoidPhase, PlannerDecision, WorldState, SensorType
+from backend.contracts import (
+    BehaviorState,
+    ObstacleAvoidPhase,
+    PlannerDecision,
+    WorldState,
+    SensorType,
+)
+
 
 class BehaviorPlanner:
+    """
+    Behaviour planner with a robust obstacle-avoidance sequence.
+
+    Improvements over the original:
+      1. Turn direction chosen dynamically (away from lane line / free side).
+      2. Per-phase wall-clock timeout — prevents infinite phases on encoder drift.
+    3. Obstacle re-detection during FORWARD phases → short hold, then safe stop.
+      4. REACQUIRE timeout — stops if lane is never found after max travel.
+      5. Consolidated avoidance entry (no duplicate code paths).
+      6. TURN_BACK direction always mirrors TURN_OUT direction.
+    """
+
+    # Wall-clock budget per phase in seconds.
+    # If a phase takes longer than this, it is force-advanced (or safe-stopped
+    # for turns where overshoot is dangerous).
+    _PHASE_TIMEOUT_S: dict[ObstacleAvoidPhase, float] = {
+        ObstacleAvoidPhase.TURN_OUT:         4.0,
+        ObstacleAvoidPhase.DRIVE_FORWARD_1:  5.0,
+        ObstacleAvoidPhase.TURN_BACK_1:      4.0,
+        ObstacleAvoidPhase.DRIVE_FORWARD_2:  5.0,
+        ObstacleAvoidPhase.TURN_BACK_2:      4.0,
+        ObstacleAvoidPhase.REACQUIRE_FORWARD: 6.0,
+    }
+
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg: PipelineConfig = cfg or PipelineConfig()
         self.current_state: BehaviorState = BehaviorState.IDLE
+
         self._avoid_phase: ObstacleAvoidPhase | None = None
         self._avoid_start_left: float | None = None
         self._avoid_start_right: float | None = None
+        self._avoid_phase_start_time: float | None = None
+        self._forward_redetect_hold_start_time: float | None = None
+
+        # +1.0 = turn right, -1.0 = turn left; set when avoidance starts
+        self._avoid_turn_dir: float = 1.0
+
+    # ------------------------------------------------------------------
+    # Avoidance sequence helpers
+    # ------------------------------------------------------------------
 
     def _reset_avoid_sequence(self) -> None:
         self._avoid_phase = None
         self._avoid_start_left = None
         self._avoid_start_right = None
+        self._avoid_phase_start_time = None
+        self._forward_redetect_hold_start_time = None
 
     def _start_avoid_phase(self, phase: ObstacleAvoidPhase, world: WorldState) -> None:
         self._avoid_phase = phase
         self._avoid_start_left = world.left_distance
         self._avoid_start_right = world.right_distance
+        self._avoid_phase_start_time = time.monotonic()
+        self._forward_redetect_hold_start_time = None
+
+    def _choose_turn_direction(self, world: WorldState) -> float | None:
+        """
+        Returns +1.0 (right), -1.0 (left), or None when no passage is available.
+        """
+        if world.obstacle_too_wide:
+            return None
+
+        if world.obstacle_clearance_right >= world.obstacle_clearance_left:
+            return -1.0
+        return 1.0
 
     def _advance_avoid_sequence(self, world: WorldState) -> None:
-        if self._avoid_phase == ObstacleAvoidPhase.TURN_OUT:
-            self._start_avoid_phase(ObstacleAvoidPhase.DRIVE_FORWARD_1, world)
-        elif self._avoid_phase == ObstacleAvoidPhase.DRIVE_FORWARD_1:
-            self._start_avoid_phase(ObstacleAvoidPhase.TURN_BACK_1, world)
-        elif self._avoid_phase == ObstacleAvoidPhase.TURN_BACK_1:
-            self._start_avoid_phase(ObstacleAvoidPhase.DRIVE_FORWARD_2, world)
-        elif self._avoid_phase == ObstacleAvoidPhase.DRIVE_FORWARD_2:
-            self._start_avoid_phase(ObstacleAvoidPhase.TURN_BACK_2, world)
-        elif self._avoid_phase == ObstacleAvoidPhase.TURN_BACK_2:
-            self._start_avoid_phase(ObstacleAvoidPhase.REACQUIRE_FORWARD, world)
-        else:
+        _next: dict[ObstacleAvoidPhase, ObstacleAvoidPhase | None] = {
+            ObstacleAvoidPhase.TURN_OUT:          ObstacleAvoidPhase.DRIVE_FORWARD_1,
+            ObstacleAvoidPhase.DRIVE_FORWARD_1:   ObstacleAvoidPhase.TURN_BACK_1,
+            ObstacleAvoidPhase.TURN_BACK_1:       ObstacleAvoidPhase.DRIVE_FORWARD_2,
+            ObstacleAvoidPhase.DRIVE_FORWARD_2:   ObstacleAvoidPhase.TURN_BACK_2,
+            ObstacleAvoidPhase.TURN_BACK_2:       ObstacleAvoidPhase.REACQUIRE_FORWARD,
+            ObstacleAvoidPhase.REACQUIRE_FORWARD: None,
+        }
+        if self._avoid_phase is None:
+            return
+        nxt = _next.get(self._avoid_phase)
+        if nxt is None:
             self._reset_avoid_sequence()
+        else:
+            self._start_avoid_phase(nxt, world)
 
     def _encoder_feedback_ok(self, world: WorldState) -> bool:
         return (
@@ -47,18 +106,38 @@ class BehaviorPlanner:
     def _phase_progress_cm(self, world: WorldState) -> float | None:
         if self._avoid_start_left is None or self._avoid_start_right is None:
             return None
-
-        left_delta = abs(world.left_distance - self._avoid_start_left)
+        left_delta  = abs(world.left_distance  - self._avoid_start_left)
         right_delta = abs(world.right_distance - self._avoid_start_right)
         return (left_delta + right_delta) / 2.0
 
-    def _turn_direction(self, phase: ObstacleAvoidPhase) -> float:
-        if phase in (ObstacleAvoidPhase.TURN_OUT):
-            return 1.0
-        return -1.0
+    def _phase_elapsed_s(self) -> float:
+        if self._avoid_phase_start_time is None:
+            return 0.0
+        return time.monotonic() - self._avoid_phase_start_time
+
+    def _phase_timed_out(self) -> bool:
+        if self._avoid_phase is None:
+            return False
+        limit = self._PHASE_TIMEOUT_S.get(self._avoid_phase, 5.0)
+        return self._phase_elapsed_s() >= limit
 
     def _turn_target_cm(self) -> float:
         return self.cfg.wheel_track * math.pi * 0.25 * self.cfg.obstacle_turn_distance_factor
+
+    def _turn_direction_for_phase(self, phase: ObstacleAvoidPhase) -> float:
+        """
+        TURN_OUT uses the chosen direction; TURN_BACK phases mirror it
+        so the vehicle always returns to the lane regardless of which
+        way it initially turned.
+        """
+        if phase == ObstacleAvoidPhase.TURN_OUT:
+            return self._avoid_turn_dir
+        # TURN_BACK_1 and TURN_BACK_2 reverse back toward the lane
+        return -self._avoid_turn_dir
+
+    # ------------------------------------------------------------------
+    # Decision builders
+    # ------------------------------------------------------------------
 
     def _build_decision(
         self,
@@ -85,18 +164,10 @@ class BehaviorPlanner:
             avoid_target_cm=avoid_target_cm,
         )
 
-
     def _decision_safe_stop(self, now: float, reason: str) -> PlannerDecision:
         self._reset_avoid_sequence()
         self.current_state = BehaviorState.SAFE_STOP
-        return self._build_decision(
-            now,
-            self.current_state,
-            reason,
-            0.0,
-            0.0,
-            safe_stop=True,
-        )
+        return self._build_decision(now, self.current_state, reason, 0.0, 0.0, safe_stop=True)
 
     def _decision_manual(self, now: float) -> PlannerDecision:
         self._reset_avoid_sequence()
@@ -108,78 +179,105 @@ class BehaviorPlanner:
         self.current_state = BehaviorState.IDLE
         return self._build_decision(now, self.current_state, "idle_mode", 0.0, 0.0)
 
-    def _ensure_avoid_sequence_started(self, now: float, world: WorldState, requested_mode: BehaviorState) -> PlannerDecision | None:
-        if self._avoid_phase is not None:
-            return None
+    # ------------------------------------------------------------------
+    # Per-phase handlers
+    # ------------------------------------------------------------------
 
-        if requested_mode == BehaviorState.LINE_FOLLOW and world.obstacle_ahead:
-            self._start_avoid_phase(ObstacleAvoidPhase.TURN_OUT, world)
-            return None
-
-        if requested_mode == BehaviorState.OBSTACLE_AVOID:
-            if world.obstacle_ahead:
-                self._start_avoid_phase(ObstacleAvoidPhase.TURN_OUT, world)
-                return None
-
-            self.current_state = BehaviorState.OBSTACLE_AVOID
-            return self._build_decision(
-                now,
-                self.current_state,
-                "waiting_for_obstacle",
-                0.0,
-                0.0,
-            )
-
-        return None
-
-    def _handle_turn_phase(self, now: float, world: WorldState, phase: ObstacleAvoidPhase, reason: str) -> PlannerDecision:
-        target_cm = self._turn_target_cm()
+    def _handle_turn_phase(
+        self,
+        now: float,
+        world: WorldState,
+        phase: ObstacleAvoidPhase,
+        reason: str,
+    ) -> PlannerDecision:
+        target_cm   = self._turn_target_cm()
         progress_cm = self._phase_progress_cm(world)
+
         if progress_cm is None:
             return self._decision_safe_stop(now, "avoidance_state_lost")
 
-        if progress_cm >= target_cm:
+        timed_out = self._phase_timed_out()
+
+        if progress_cm >= target_cm or timed_out:
+            if timed_out and self.cfg.DEBUG:
+                print(f"DEBUG: Phase {reason} timed out at progress={progress_cm:.1f} cm")
             self._advance_avoid_sequence(world)
             return self._build_decision(
-                now,
-                BehaviorState.OBSTACLE_AVOID,
-                f"{reason}_complete",
-                0.0,
-                0.0,
+                now, BehaviorState.OBSTACLE_AVOID, f"{reason}_complete",
+                0.0, 0.0,
                 avoid_phase=self._avoid_phase,
                 avoid_progress_cm=progress_cm,
                 avoid_target_cm=target_cm,
             )
 
-        turn_gain = self.cfg.obstacle_turn_speed * self._turn_direction(phase)
+        turn_gain = self.cfg.obstacle_turn_speed * self._turn_direction_for_phase(phase)
         if progress_cm >= target_cm * self.cfg.obstacle_slowdown_ratio:
-            turn_gain = self.cfg.obstacle_turn_slow_speed * self._turn_direction(phase)
+            turn_gain = self.cfg.obstacle_turn_slow_speed * self._turn_direction_for_phase(phase)
 
         self.current_state = BehaviorState.OBSTACLE_AVOID
         return self._build_decision(
-            now,
-            self.current_state,
-            reason,
-            0.0,
-            turn_gain,
+            now, self.current_state, reason, 0.0, turn_gain,
             avoid_phase=self._avoid_phase,
             avoid_progress_cm=progress_cm,
             avoid_target_cm=target_cm,
         )
 
-    def _handle_drive_forward_phase(self, now: float, world: WorldState, target_cm: float, reason: str, speed: float) -> PlannerDecision:
+    def _handle_drive_forward_phase(
+        self,
+        now: float,
+        world: WorldState,
+        target_cm: float,
+        reason: str,
+        speed: float,
+    ) -> PlannerDecision:
         progress_cm = self._phase_progress_cm(world)
+
         if progress_cm is None:
             return self._decision_safe_stop(now, "avoidance_state_lost")
 
-        if progress_cm >= target_cm:
+        # --- Re-detection while driving forward --------------------------------
+        # Hold briefly to let ultrasonic settle after turn-out transients.
+        # If still blocked after the hold, safe-stop instead of re-turning.
+        if world.obstacle_ahead:
+            hold_s = max(0.0, float(self.cfg.obstacle_forward_redetect_hold_s))
+            if self._forward_redetect_hold_start_time is None:
+                self._forward_redetect_hold_start_time = now
+                if self.cfg.DEBUG:
+                    print(f"DEBUG: Obstacle seen during {reason}, holding for {hold_s:.2f}s")
+                self.current_state = BehaviorState.OBSTACLE_AVOID
+                return self._build_decision(
+                    now, self.current_state, "obstacle_redetect_hold",
+                    0.0, 0.0,
+                    avoid_phase=self._avoid_phase,
+                    avoid_progress_cm=progress_cm,
+                    avoid_target_cm=target_cm,
+                )
+
+            if (now - self._forward_redetect_hold_start_time) < hold_s:
+                self.current_state = BehaviorState.OBSTACLE_AVOID
+                return self._build_decision(
+                    now, self.current_state, "obstacle_redetect_hold",
+                    0.0, 0.0,
+                    avoid_phase=self._avoid_phase,
+                    avoid_progress_cm=progress_cm,
+                    avoid_target_cm=target_cm,
+                )
+
+            if self.cfg.DEBUG:
+                print(f"DEBUG: Obstacle persisted after hold during {reason}, safe-stopping")
+            return self._decision_safe_stop(now, "obstacle_redetected_during_forward")
+        else:
+            self._forward_redetect_hold_start_time = None
+
+        timed_out = self._phase_timed_out()
+
+        if progress_cm >= target_cm or timed_out:
+            if timed_out and self.cfg.DEBUG:
+                print(f"DEBUG: Phase {reason} timed out at progress={progress_cm:.1f} cm")
             self._advance_avoid_sequence(world)
             return self._build_decision(
-                now,
-                BehaviorState.OBSTACLE_AVOID,
-                f"{reason}_complete",
-                0.0,
-                0.0,
+                now, BehaviorState.OBSTACLE_AVOID, f"{reason}_complete",
+                0.0, 0.0,
                 avoid_phase=self._avoid_phase,
                 avoid_progress_cm=progress_cm,
                 avoid_target_cm=target_cm,
@@ -190,11 +288,7 @@ class BehaviorPlanner:
 
         self.current_state = BehaviorState.OBSTACLE_AVOID
         return self._build_decision(
-            now,
-            self.current_state,
-            reason,
-            speed,
-            0.0,
+            now, self.current_state, reason, speed, 0.0,
             avoid_phase=self._avoid_phase,
             avoid_progress_cm=progress_cm,
             avoid_target_cm=target_cm,
@@ -202,63 +296,34 @@ class BehaviorPlanner:
 
     def _handle_reacquire_phase(self, now: float, world: WorldState) -> PlannerDecision:
         progress_cm = self._phase_progress_cm(world)
+
         if progress_cm is None:
             return self._decision_safe_stop(now, "avoidance_state_lost")
 
-        target_cm = float(self.cfg.obstacle_reacquire_min_forward_cm)
-        if progress_cm >= target_cm and world.lane_detected:
+        # Success: minimum distance covered AND lane visible
+        min_cm = float(self.cfg.obstacle_reacquire_min_forward_cm)
+        if progress_cm >= min_cm and world.lane_detected:
             self._reset_avoid_sequence()
             return self._line_follow_nominal(now, world)
 
+        # Safety: new obstacle ahead while reacquiring → stop rather than collide
+        if world.obstacle_ahead:
+            return self._decision_safe_stop(now, "obstacle_during_reacquire")
+
+        # Timeout: lane never found — safe stop to avoid driving off into the void
+        if self._phase_timed_out():
+            return self._decision_safe_stop(now, "reacquire_timeout_lane_not_found")
+
         speed = self.cfg.obstacle_reacquire_speed
-        if progress_cm >= target_cm * self.cfg.obstacle_slowdown_ratio:
+        if progress_cm >= min_cm * self.cfg.obstacle_slowdown_ratio:
             speed = self.cfg.obstacle_reacquire_slow_speed
 
         self.current_state = BehaviorState.OBSTACLE_AVOID
         return self._build_decision(
-            now,
-            self.current_state,
-            "reacquire_forward",
-            speed,
-            0.0,
+            now, self.current_state, "reacquire_forward", speed, 0.0,
             avoid_phase=self._avoid_phase,
             avoid_progress_cm=progress_cm,
-            avoid_target_cm=target_cm,
-        )
-
-    def _handle_turn_back_phase(self, now: float, world: WorldState, phase: ObstacleAvoidPhase, reason: str) -> PlannerDecision:
-        target_cm = self._turn_target_cm()
-        progress_cm = self._phase_progress_cm(world)
-        if progress_cm is None:
-            return self._decision_safe_stop(now, "avoidance_state_lost")
-
-        if progress_cm >= target_cm:
-            self._advance_avoid_sequence(world)
-            return self._build_decision(
-                now,
-                BehaviorState.OBSTACLE_AVOID,
-                f"{reason}_complete",
-                0.0,
-                0.0,
-                avoid_phase=self._avoid_phase,
-                avoid_progress_cm=progress_cm,
-                avoid_target_cm=target_cm,
-            )
-
-        turn_gain = self.cfg.obstacle_turn_speed * self._turn_direction(phase)
-        if progress_cm >= target_cm * self.cfg.obstacle_slowdown_ratio:
-            turn_gain = self.cfg.obstacle_turn_slow_speed * self._turn_direction(phase)
-
-        self.current_state = BehaviorState.OBSTACLE_AVOID
-        return self._build_decision(
-            now,
-            self.current_state,
-            reason,
-            0.0,
-            turn_gain,
-            avoid_phase=self._avoid_phase,
-            avoid_progress_cm=progress_cm,
-            avoid_target_cm=target_cm,
+            avoid_target_cm=min_cm,
         )
 
     def _handle_active_avoid_sequence(
@@ -275,20 +340,37 @@ class BehaviorPlanner:
         if self._phase_progress_cm(world) is None:
             return self._decision_safe_stop(now, "avoidance_state_lost")
 
-        if self._avoid_phase == ObstacleAvoidPhase.TURN_OUT:
-            return self._handle_turn_phase(now, world, ObstacleAvoidPhase.TURN_OUT, "turn_out")
-        if self._avoid_phase == ObstacleAvoidPhase.DRIVE_FORWARD_1:
-            return self._handle_drive_forward_phase(now, world, float(self.cfg.obstacle_forward_distance_cm), "drive_forward_1", self.cfg.obstacle_forward_speed)
-        if self._avoid_phase == ObstacleAvoidPhase.TURN_BACK_1:
-            return self._handle_turn_back_phase(now, world, ObstacleAvoidPhase.TURN_BACK_1, "turn_back_1")
-        if self._avoid_phase == ObstacleAvoidPhase.DRIVE_FORWARD_2:
-            return self._handle_drive_forward_phase(now, world, float(self.cfg.obstacle_forward_distance_2_cm), "drive_forward_2", self.cfg.obstacle_forward_speed)
-        if self._avoid_phase == ObstacleAvoidPhase.TURN_BACK_2:
-            return self._handle_turn_back_phase(now, world, ObstacleAvoidPhase.TURN_BACK_2, "turn_back_2")
-        if self._avoid_phase == ObstacleAvoidPhase.REACQUIRE_FORWARD:
+        p = self._avoid_phase
+
+        if p == ObstacleAvoidPhase.TURN_OUT:
+            return self._handle_turn_phase(now, world, p, "turn_out")
+
+        if p == ObstacleAvoidPhase.DRIVE_FORWARD_1:
+            return self._handle_drive_forward_phase(
+                now, world, float(self.cfg.obstacle_forward_distance_cm),
+                "drive_forward_1", self.cfg.obstacle_forward_speed,
+            )
+
+        if p == ObstacleAvoidPhase.TURN_BACK_1:
+            return self._handle_turn_phase(now, world, p, "turn_back_1")
+
+        if p == ObstacleAvoidPhase.DRIVE_FORWARD_2:
+            return self._handle_drive_forward_phase(
+                now, world, float(self.cfg.obstacle_forward_distance_2_cm),
+                "drive_forward_2", self.cfg.obstacle_forward_speed,
+            )
+
+        if p == ObstacleAvoidPhase.TURN_BACK_2:
+            return self._handle_turn_phase(now, world, p, "turn_back_2")
+
+        if p == ObstacleAvoidPhase.REACQUIRE_FORWARD:
             return self._handle_reacquire_phase(now, world)
 
         return None
+
+    # ------------------------------------------------------------------
+    # Line-follow helpers
+    # ------------------------------------------------------------------
 
     def _line_follow_nominal(self, now: float, world: WorldState) -> PlannerDecision:
         self.current_state = BehaviorState.LINE_FOLLOW
@@ -299,53 +381,68 @@ class BehaviorPlanner:
         if self.cfg.adaptive_speed:
             speed = self.cfg.cruise_speed * max(
                 self.cfg.line_min_speed_factor,
-                1 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature),
+                1.0 - self.cfg.line_curvature_speed_gain * abs(world.line_curvature),
             )
-
-
-        turn = self.cfg.line_kp * (-world.line_offset) + self.cfg.line_angle_kp * world.line_angle
-        return self._build_decision(now, self.current_state, "line_follow_nominal", speed, turn)
-
-    def _line_follow_with_obstacle(self, now: float, world: WorldState) -> PlannerDecision:
-        self._start_avoid_phase(ObstacleAvoidPhase.TURN_OUT, world)
-        self.current_state = BehaviorState.OBSTACLE_AVOID
-        return self._build_decision(
-            now,
-            self.current_state,
-            "obstacle_detected",
-            0.0,
-            self.cfg.obstacle_turn_speed,
-            avoid_phase=self._avoid_phase,
-            avoid_progress_cm=0.0,
-            avoid_target_cm=self._turn_target_cm(),
+        turn = (
+            self.cfg.line_kp      * (-world.line_offset)
+            + self.cfg.line_angle_kp * world.line_angle
         )
+        return self._build_decision(now, self.current_state, "line_follow_nominal", speed, turn)
 
     def _handle_line_follow_mode(self, now: float, world: WorldState) -> PlannerDecision:
         if world.obstacle_ahead:
-            return self._line_follow_with_obstacle(now, world)
+            # Choose turn direction NOW, before entering the sequence
+            direction = self._choose_turn_direction(world)
+            if direction is None:
+                return self._decision_safe_stop(now, "obstacle_too_wide_no_passage")
+            self._avoid_turn_dir = direction
+            self._start_avoid_phase(ObstacleAvoidPhase.TURN_OUT, world)
+            self.current_state = BehaviorState.OBSTACLE_AVOID
+            return self._build_decision(
+                now, self.current_state, "obstacle_detected",
+                0.0, self.cfg.obstacle_turn_speed * self._avoid_turn_dir,
+                avoid_phase=self._avoid_phase,
+                avoid_progress_cm=0.0,
+                avoid_target_cm=self._turn_target_cm(),
+            )
         return self._line_follow_nominal(now, world)
 
     def _handle_obstacle_avoid_mode(self, now: float, world: WorldState) -> PlannerDecision:
         self.current_state = BehaviorState.OBSTACLE_AVOID
         if world.obstacle_ahead and self._avoid_phase is None:
+            direction = self._choose_turn_direction(world)
+            if direction is None:
+                return self._decision_safe_stop(now, "obstacle_too_wide_no_passage")
+            self._avoid_turn_dir = direction
             self._start_avoid_phase(ObstacleAvoidPhase.TURN_OUT, world)
+
         if self._avoid_phase is None:
-            return self._build_decision(now, self.current_state, "obstacle_avoid_mode", 0.0, 0.0)
+            return self._build_decision(now, self.current_state, "waiting_for_obstacle", 0.0, 0.0)
 
-        return self._build_decision(
-            now,
-            self.current_state,
-            "obstacle_avoid_mode",
-            0.0,
-            self.cfg.obstacle_turn_speed,
-            avoid_phase=self._avoid_phase,
-            avoid_progress_cm=self._phase_progress_cm(world),
-            avoid_target_cm=self._turn_target_cm(),
-        )
+        # Delegate to the active sequence handler (already running)
+        result = self._handle_active_avoid_sequence(now, world)
+        if result is not None:
+            return result
 
-    def step(self, world: WorldState, requested_mode: BehaviorState, heartbeat_ok: bool) -> PlannerDecision:
+        return self._build_decision(now, self.current_state, "obstacle_avoid_mode", 0.0, 0.0)
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
+    def step(
+        self,
+        world: WorldState,
+        requested_mode: BehaviorState,
+        heartbeat_ok: bool,
+    ) -> PlannerDecision:
         if self.cfg.DEBUG:
-            print("DEBUG: Planner step - world:", world, "requested_mode:", requested_mode, "heartbeat_ok:", heartbeat_ok)
+            print(
+                f"DEBUG: Planner step — mode={requested_mode} "
+                f"phase={self._avoid_phase} obstacle={world.obstacle_ahead} "
+                f"lane={world.lane_detected}"
+            )
+
         now = time.monotonic()
 
         if not heartbeat_ok or world.stale:
@@ -357,10 +454,8 @@ class BehaviorPlanner:
         if requested_mode not in (BehaviorState.LINE_FOLLOW, BehaviorState.OBSTACLE_AVOID):
             return self._decision_idle(now)
 
-        start_decision = self._ensure_avoid_sequence_started(now, world, requested_mode)
-        if start_decision is not None:
-            return start_decision
-
+        # If an avoidance sequence is already running, service it first
+        # regardless of the requested mode (avoid interrupted mid-manoeuvre).
         active_avoid = self._handle_active_avoid_sequence(now, world)
         if active_avoid is not None:
             return active_avoid

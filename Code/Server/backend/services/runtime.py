@@ -8,8 +8,6 @@ import time
 import threading
 from _thread import lock
 
-from typing_extensions import runtime
-
 from .hardware import VehicleHardware
 from .state import StateStore
 from ..pipeline.pipeline import ModularPipeline
