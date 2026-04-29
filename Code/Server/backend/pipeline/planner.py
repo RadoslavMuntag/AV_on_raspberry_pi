@@ -15,20 +15,12 @@ from backend.contracts import (
 
 class BehaviorPlanner:
     """
-    Behaviour planner with a robust obstacle-avoidance sequence.
-
-    Improvements over the original:
-      1. Turn direction chosen dynamically (away from lane line / free side).
-      2. Per-phase wall-clock timeout — prevents infinite phases on encoder drift.
-    3. Obstacle re-detection during FORWARD phases → short hold, then safe stop.
-      4. REACQUIRE timeout — stops if lane is never found after max travel.
-      5. Consolidated avoidance entry (no duplicate code paths).
-      6. TURN_BACK direction always mirrors TURN_OUT direction.
+    Behaviour planner with an obstacle-avoidance sequence.
+    
     """
 
     # Wall-clock budget per phase in seconds.
-    # If a phase takes longer than this, it is force-advanced (or safe-stopped
-    # for turns where overshoot is dangerous).
+    # If a phase takes longer than this, it is force-advanced 
     _PHASE_TIMEOUT_S: dict[ObstacleAvoidPhase, float] = {
         ObstacleAvoidPhase.TURN_OUT:         4.0,
         ObstacleAvoidPhase.DRIVE_FORWARD_1:  5.0,
@@ -48,7 +40,7 @@ class BehaviorPlanner:
         self._avoid_phase_start_time: float | None = None
         self._forward_redetect_hold_start_time: float | None = None
 
-        # +1.0 = turn right, -1.0 = turn left; set when avoidance starts
+        # +1.0 = turn right, -1.0 = turn left
         self._avoid_turn_dir: float = 1.0
 
     # ------------------------------------------------------------------
@@ -342,6 +334,14 @@ class BehaviorPlanner:
 
         p = self._avoid_phase
 
+        # In the final manoeuvre phases, a reliable lane reacquire is enough to
+        # finish avoidance early and return to nominal line following.
+        if p == ObstacleAvoidPhase.TURN_BACK_2 and world.lane_detected:
+            if self.cfg.DEBUG:
+                print(f"DEBUG: Lane detected during {p}; ending avoidance sequence early")
+            self._reset_avoid_sequence()
+            return self._line_follow_nominal(now, world)
+
         if p == ObstacleAvoidPhase.TURN_OUT:
             return self._handle_turn_phase(now, world, p, "turn_out")
 
@@ -437,11 +437,8 @@ class BehaviorPlanner:
         heartbeat_ok: bool,
     ) -> PlannerDecision:
         if self.cfg.DEBUG:
-            print(
-                f"DEBUG: Planner step — mode={requested_mode} "
-                f"phase={self._avoid_phase} obstacle={world.obstacle_ahead} "
-                f"lane={world.lane_detected}"
-            )
+            debug_msg = f"DEBUG: Planner step — mode={requested_mode} phase={self._avoid_phase} obstacle={world.obstacle_ahead} lane={world.lane_detected}"
+            print(debug_msg)
 
         now = time.monotonic()
 

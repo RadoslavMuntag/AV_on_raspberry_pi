@@ -22,8 +22,8 @@ class PipelineConfig:
     obstacle_forward_speed: float = 0.28
     obstacle_forward_slow_speed: float = 0.12
     obstacle_forward_redetect_hold_s: float = 0.25
-    obstacle_reacquire_speed: float = 0.18
-    obstacle_reacquire_slow_speed: float = 0.1
+    obstacle_reacquire_speed: float = 0.28
+    obstacle_reacquire_slow_speed: float = 0.27
     obstacle_slowdown_ratio: float = 0.8
 
     adaptive_speed: bool = False # whether to automatically reduce speed based on curvatre 
