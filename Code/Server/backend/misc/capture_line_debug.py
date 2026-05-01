@@ -17,7 +17,20 @@ CameraBackend = Literal["usb", "picamera"]
 
 def detect_line_geometry_with_stages(
     jpeg_bytes: bytes,
-) -> tuple[float | None, float | None, float | None, float, dict[str, MatLike]]:
+    obstacle_far_roi_ratio: float = 0.45,
+    obstacle_min_area_px: float = 200.0,
+    obstacle_px_per_cm: float = 8.0,
+    obstacle_distance_cm: float | None = None,
+    camera_diag_fov_deg: float = 75.0,
+) -> tuple[
+    float | None,
+    float | None,
+    float | None,
+    float,
+    dict[str, MatLike],
+    float | None,
+    float | None,
+]:
     """
     Copy of the contour-based line geometry detector with stage snapshots.
 
@@ -41,16 +54,71 @@ def detect_line_geometry_with_stages(
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     stages["02_gray"] = gray.copy()
 
-    _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
-    stages["03_threshold_inv"] = binary.copy()
+    # Full-image binarization using Otsu (inverted)
+    _, binary_full = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    stages["03_threshold_inv_full"] = binary_full.copy()
+
+    # --- Far-field obstacle probe (upper ROI) ---
+    obstacle_width_cm: float | None = None
+    obstacle_x_norm: float | None = None
+    obstacle_bbox: tuple[int, int, int, int] | None = None
+
+    h, w = binary_full.shape
+    far_h = int(np.clip(h * obstacle_far_roi_ratio, 0, h))
+    obstacle_mask = np.zeros_like(binary_full)
+    obstacle_mask[int(0.3 * h) : far_h, :] = 255
+    stages["04_obstacle_mask"] = obstacle_mask.copy()
+
+    obstacle_binary = cv2.bitwise_and(binary_full, binary_full, mask=obstacle_mask)
+    obstacle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    obstacle_binary = cv2.morphologyEx(obstacle_binary, cv2.MORPH_OPEN, obstacle_kernel)
+    stages["05_obstacle_binary"] = obstacle_binary.copy()
+
+    obs_contours, _ = cv2.findContours(obstacle_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours_debug_obs = cv2.cvtColor(obstacle_binary, cv2.COLOR_GRAY2BGR)
+    if obs_contours:
+        _ = cv2.drawContours(contours_debug_obs, obs_contours, -1, (0, 255, 255), 1)
+    stages["06_obstacle_contours"] = contours_debug_obs
+
+    if obs_contours:
+        obs = max(obs_contours, key=cv2.contourArea)
+        obs_area = float(cv2.contourArea(obs))
+        if obs_area >= obstacle_min_area_px:
+            ox, oy, ow, oh = cv2.boundingRect(obs)
+            dynamic_px_per_cm: float | None = None
+            if (
+                obstacle_distance_cm is not None
+                and obstacle_distance_cm > 0.0
+                and camera_diag_fov_deg > 0.0
+            ):
+                diag_px = float(np.hypot(w, h))
+                half_diag_fov_rad = float(np.deg2rad(camera_diag_fov_deg * 0.5))
+                tan_half = float(np.tan(half_diag_fov_rad))
+                if tan_half > 1e-6:
+                    focal_px = (0.5 * diag_px) / tan_half
+                    dynamic_px_per_cm = focal_px / float(obstacle_distance_cm)
+
+            px_per_cm = float(obstacle_px_per_cm)
+            if dynamic_px_per_cm is not None and dynamic_px_per_cm > 1e-6:
+                px_per_cm = dynamic_px_per_cm
+
+            if px_per_cm > 1e-6:
+                obstacle_width_cm = float(ow) / px_per_cm
+            obstacle_x_norm = float(
+                np.clip(((ox + (ow * 0.5)) - (w * 0.5)) / (w * 0.5), -1.0, 1.0)
+            )
+            obstacle_bbox = (ox, oy, ow, oh)
+
+    # keep binary variable name for subsequent lane ROI processing
+    binary = binary_full.copy()
 
     h, w = binary.shape
     mask = np.zeros_like(binary)
     mask[int(h * 0.45) : h, 0:w] = 255
-    stages["04_roi_mask"] = mask.copy()
+    stages["07_roi_mask"] = mask.copy()
 
     binary = cv2.bitwise_and(binary, binary, mask=mask)
-    stages["05_threshold_roi"] = binary.copy()
+    stages["08_threshold_roi"] = binary.copy()
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
@@ -61,10 +129,24 @@ def detect_line_geometry_with_stages(
     contours_debug = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
     if contours:
         _ = cv2.drawContours(contours_debug, contours, -1, (0, 255, 255), 1)
-    stages["07_all_contours"] = contours_debug
+    stages["09_all_contours"] = contours_debug
 
     if len(contours) == 0:
         no_line_debug = frame.copy()
+        # draw obstacle bbox/info if present
+        if obstacle_bbox is not None:
+            ox, oy, ow, oh = obstacle_bbox
+            _ = cv2.rectangle(no_line_debug, (ox, oy), (ox + ow, oy + oh), (0, 0, 255), 2)
+            _ = cv2.putText(
+                no_line_debug,
+                f"obs_w={obstacle_width_cm:.1f}cm x={obstacle_x_norm:.2f}" if obstacle_width_cm is not None else f"obs_x={obstacle_x_norm:.2f}",
+                (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
         _ = cv2.putText(
             no_line_debug,
             "No contour found",
@@ -76,17 +158,31 @@ def detect_line_geometry_with_stages(
             cv2.LINE_AA,
         )
         stages["08_final_debug"] = no_line_debug
-        return None, None, None, 0.0, stages
+        return None, None, None, 0.0, stages, obstacle_width_cm, obstacle_x_norm
 
     contour = max(contours, key=cv2.contourArea)
 
     largest_debug = frame.copy()
     _ = cv2.drawContours(largest_debug, [contour], -1, (255, 0, 0), 2)
-    stages["08_largest_contour"] = largest_debug
+    stages["10_largest_contour"] = largest_debug
 
     points = contour[:, 0, :]
     if len(points) < 3:
         few_points_debug = largest_debug.copy()
+        # draw obstacle bbox/info if present
+        if obstacle_bbox is not None:
+            ox, oy, ow, oh = obstacle_bbox
+            _ = cv2.rectangle(few_points_debug, (ox, oy), (ox + ow, oy + oh), (0, 0, 255), 2)
+            _ = cv2.putText(
+                few_points_debug,
+                f"obs_w={obstacle_width_cm:.1f}cm x={obstacle_x_norm:.2f}" if obstacle_width_cm is not None else f"obs_x={obstacle_x_norm:.2f}",
+                (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
         _ = cv2.putText(
             few_points_debug,
             "Largest contour has too few points",
@@ -98,7 +194,7 @@ def detect_line_geometry_with_stages(
             cv2.LINE_AA,
         )
         stages["09_final_debug"] = few_points_debug
-        return None, None, None, 0.0, stages
+        return None, None, None, 0.0, stages, obstacle_width_cm, obstacle_x_norm
 
     x = points[:, 0]
     y = points[:, 1]
@@ -143,6 +239,20 @@ def detect_line_geometry_with_stages(
             _ = cv2.circle(debug, (xi, yi), 2, (0, 255, 0), -1)
 
     _ = cv2.drawContours(debug, [contour], -1, (255, 0, 0), 2)
+    # draw obstacle bbox/info if present
+    if obstacle_bbox is not None:
+        ox, oy, ow, oh = obstacle_bbox
+        _ = cv2.rectangle(debug, (ox, oy), (ox + ow, oy + oh), (0, 0, 255), 2)
+        _ = cv2.putText(
+            debug,
+            f"obs_w={obstacle_width_cm:.1f}cm x={obstacle_x_norm:.2f}" if obstacle_width_cm is not None else f"obs_x={obstacle_x_norm:.2f}",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
     _ = cv2.putText(
         debug,
         f"slope: {float(slope):.3f} angle: {angle:.3f} conf: {confidence:.3f}",
@@ -154,8 +264,8 @@ def detect_line_geometry_with_stages(
         cv2.LINE_AA,
     )
 
-    stages["09_final_debug"] = debug
-    return angle, curvature, offset, confidence, stages
+    stages["11_final_debug"] = debug
+    return angle, curvature, offset, confidence, stages, obstacle_width_cm, obstacle_x_norm
 
 
 def capture_single_jpeg(
@@ -238,11 +348,12 @@ def main() -> None:
         timeout_sec=cast(float, args.timeout),
     )
 
-    angle, curvature, offset, confidence, stages = detect_line_geometry_with_stages(jpeg_bytes)
+    angle, curvature, offset, confidence, stages, obstacle_width_cm, obstacle_x_norm = detect_line_geometry_with_stages(jpeg_bytes)
     save_stages(stages, run_dir)
 
     print(f"Saved {len(stages)} snapshots to: {run_dir}")
     print(f"Results -> angle={angle}, curvature={curvature}, offset={offset}, confidence={confidence:.3f}")
+    print(f"Obstacle -> width_cm={obstacle_width_cm}, x_norm={obstacle_x_norm}")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ class FusionModule:
 
         obs_w = p.obstacle_width_cm
         obs_x = float(p.obstacle_x_norm or 0.0)
+        frame_width_cm = p.obstacle_frame_width_cm
 
         clearance_left = 1.0
         clearance_right = 1.0
@@ -23,7 +24,7 @@ class FusionModule:
         obstacle_width_cm: float | None = None
 
         if ultrasonic_close and obs_w is not None:
-            frame_width_cm = max(1e-6, float(self.cfg.obstacle_frame_width_cm))
+            frame_width_cm = max(1e-6, float(frame_width_cm or self.cfg.obstacle_frame_width_cm))
             half_frame_cm = frame_width_cm * 0.5
 
             center_cm = obs_x * half_frame_cm

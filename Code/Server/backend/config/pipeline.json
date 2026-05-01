@@ -12,7 +12,6 @@
     "obstacle_slowdown_ratio": 0.8,
     
     "cruise_speed": 23.0,
-    "no_lane_speed": 10.0,
 
     "speed_kp": 0.019,
     "speed_ki": 0.001,
@@ -25,7 +24,7 @@
     "line_angle_kp": 1.0,
     "line_curvature_speed_gain": 50.0,
     "line_min_speed_factor": 0.45,
-    "min_confidence": 0.37,
+    "min_confidence": 0.35,
 
     "obstacle_far_roi_ratio": 0.45,
     "obstacle_min_area_px": 200.0,

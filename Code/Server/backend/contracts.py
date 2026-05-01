@@ -71,6 +71,7 @@ class PerceptionFrame:
     line_confidence: float = 0.0  # in range [0, 1]
     obstacle_width_cm: float | None = None
     obstacle_x_norm: float | None = None
+    obstacle_frame_width_cm: float | None = None
 
     camera_ok: bool = True
     faults: list[str] = field(default_factory=list)

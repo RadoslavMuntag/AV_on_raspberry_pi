@@ -4,7 +4,7 @@ import time
 
 
 from .config import PipelineConfig
-from ..contracts import PerceptionFrame, InfraredState
+from ..contracts import PerceptionFrame
 from ..services.hardware import VehicleHardware
 from .vision import detect_line_geometry
 
@@ -37,6 +37,7 @@ class PerceptionModule:
         cam_confidence: float = 0.0
         cam_obstacle_width_cm: float | None = None
         cam_obstacle_x_norm: float | None = None
+        cam_obstacle_frame_width_cm: float | None = None
 
         angle, curvature, offset, confidence = None, None, None, 0.0
         if camera_frame is None:
@@ -50,6 +51,7 @@ class PerceptionModule:
                     cam_confidence,
                     cam_obstacle_width_cm,
                     cam_obstacle_x_norm,
+                    cam_obstacle_frame_width_cm,
                     debug,
                 ) = detect_line_geometry(
                     camera_frame,
@@ -88,6 +90,7 @@ class PerceptionModule:
             line_confidence=confidence,
             obstacle_width_cm=cam_obstacle_width_cm,
             obstacle_x_norm=cam_obstacle_x_norm,
+            obstacle_frame_width_cm=cam_obstacle_frame_width_cm,
             camera_ok=hardware.ready,
             faults=faults,
         )

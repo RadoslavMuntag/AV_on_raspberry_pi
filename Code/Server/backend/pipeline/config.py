@@ -5,13 +5,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import fields
 from pathlib import Path
-from sqlite3 import adapt
 from typing import cast
 
 @dataclass(slots=True)
 class PipelineConfig:
+    # The default values of attributes in this class are not necessarily the defaults used by the system, 
+    # but rather serve as type annotations and placeholders. 
+    # The actual default values are defined in the JSON config file (e.g., backend/config/pipeline.json) and loaded at runtime. 
+
     obstacle_threshold_cm: float = 35.0
     max_sensor_age_s: float = 0.25
+
+    # ------------------------------------------------------------------
+    # obstacle avoidance parameters
+    # ------------------------------------------------------------------
 
     obstacle_turn_distance_factor: float = 0.5  # multiplier for the number of 90-degree turns to perform when avoiding an obstacle (should be less then 1.0, since robot will likely overshoot a perfect 90-degree turn)
     obstacle_forward_distance_cm: float = 10.0
@@ -26,23 +33,9 @@ class PipelineConfig:
     obstacle_reacquire_slow_speed: float = 0.27
     obstacle_slowdown_ratio: float = 0.8
 
-    adaptive_speed: bool = False # whether to automatically reduce speed based on curvatre 
-    cruise_speed: float = 23.0 # in cm/s
-    no_lane_speed: float = 10.0 # in cm/s
-
-    # PID controller parameters
-    speed_kp: float = 0.019
-    speed_ki: float = 0.001
-    speed_kd: float = 0.00001
-
-    max_pwm: int = 4096
-    min_pwm: int = 0  # minimum PWM to overcome static friction and ensure movement, in the range [0, max_pwm]
-
-    line_kp: float = 1.8
-    line_angle_kp: float = 1.2
-    line_curvature_speed_gain: float = 50.0
-    line_min_speed_factor: float = 0.45
-    min_confidence: float = 0.25
+    # ------------------------------------------------------------------
+    # obstacle detection parameters
+    # ------------------------------------------------------------------
 
     obstacle_far_roi_ratio: float = 0.45
     obstacle_min_area_px: float = 200.0
@@ -50,6 +43,32 @@ class PipelineConfig:
     camera_diag_fov_deg: float = 75.0
     obstacle_frame_width_cm: float = 30.0
     obstacle_max_passable_width_cm: float = 15.0
+
+    # ------------------------------------------------------------------
+    # line following parameters
+    # ------------------------------------------------------------------
+
+    adaptive_speed: bool = False # whether to automatically reduce speed based on curvatre, this feature is experimental 
+    cruise_speed: float = 23.0 # in cm/s
+
+    line_kp: float = 1.8
+    line_angle_kp: float = 1.2
+    line_curvature_speed_gain: float = 50.0
+    line_min_speed_factor: float = 0.45
+    min_confidence: float = 0.25
+
+    # ------------------------------------------------------------------
+    # control parameters
+    # ------------------------------------------------------------------
+
+    # PID controller parameters
+    speed_kp: float = 0.019
+    speed_ki: float = 0.001
+    speed_kd: float = 0.00001
+
+    max_pwm: int = 4096 # maximum PWM value for motor control, in the range [0, 4096]
+    min_pwm: int = 0  # minimum PWM to overcome static friction and ensure movement, in the range [0, max_pwm]
+
 
     wheel_track: float = 14.0 # distance between tracks in cm, used for kinematic calculations
     wheel_radius: float = 1.25 # radius of the wheels in cm, used for kinematic calculations

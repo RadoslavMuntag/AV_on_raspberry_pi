@@ -60,7 +60,7 @@ class Camera:
 
                 "AwbEnable": False,       # disable auto white balance
 
-                "Contrast": 1.5,          # increase contrast
+                "Contrast": 1.0,          # increase contrast
                 "Sharpness": 2.0,         # enhance edges
 
             })

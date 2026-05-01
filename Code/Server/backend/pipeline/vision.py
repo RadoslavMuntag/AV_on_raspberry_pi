@@ -11,11 +11,13 @@ def detect_line_geometry(
     obstacle_px_per_cm: float = 8.0,
     obstacle_distance_cm: float | None = None,
     camera_diag_fov_deg: float = 75.0,
+    threshold: float = 100.0,
 ) -> tuple[
     float | None,
     float | None,
     float | None,
     float,
+    float | None,
     float | None,
     float | None,
     MatLike,
@@ -30,7 +32,8 @@ def detect_line_geometry(
         confidence       : line detection confidence in range [0, 1]
         obstacle_width_cm: estimated obstacle width in cm (None if unavailable)
         obstacle_x_norm  : obstacle center in range [-1, 1] (None if unavailable)
-        debug_image      : visualization image
+        obstacle_frame_width_cm: estimated image frame width in cm (None if unavailable)
+        debug_image       : visualization image
     """
 
     arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
@@ -40,7 +43,11 @@ def detect_line_geometry(
         raise ValueError("Failed to decode JPEG bytes into an image")
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, binary_full = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    if threshold <= 0.0:
+        _, binary_full = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    else:
+        _, binary_full = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)
 
     h, w = binary_full.shape
     debug = frame.copy()
@@ -48,6 +55,7 @@ def detect_line_geometry(
     # Far-field obstacle probe (upper ROI).
     obstacle_width_cm: float | None = None
     obstacle_x_norm: float | None = None
+    obstacle_frame_width_cm: float | None = None
 
     far_h = int(np.clip(h * obstacle_far_roi_ratio, 0, h))
     obstacle_mask = np.zeros_like(binary_full)
@@ -79,6 +87,8 @@ def detect_line_geometry(
             px_per_cm = float(obstacle_px_per_cm)
             if dynamic_px_per_cm is not None and dynamic_px_per_cm > 1e-6:
                 px_per_cm = dynamic_px_per_cm
+            if px_per_cm > 1e-6:
+                obstacle_frame_width_cm = float(w) / px_per_cm
 
             if px_per_cm > 1e-6:
                 obstacle_width_cm = float(ow) / px_per_cm
@@ -108,7 +118,7 @@ def detect_line_geometry(
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     if len(contours) == 0:
-        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, debug
+        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, obstacle_frame_width_cm, debug
 
     # Use the largest contour as the line
     contour = max(contours, key=cv2.contourArea)
@@ -116,7 +126,7 @@ def detect_line_geometry(
     points = contour[:,0,:]
 
     if len(points) < 3:
-        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, debug
+        return None, None, None, 0.0, obstacle_width_cm, obstacle_x_norm, obstacle_frame_width_cm, debug
 
     x = points[:,0]
     y = points[:,1]
@@ -179,7 +189,7 @@ def detect_line_geometry(
         cv2.LINE_AA,
     )
 
-    return angle, curvature, offset, confidence, obstacle_width_cm, obstacle_x_norm, debug
+    return angle, curvature, offset, confidence, obstacle_width_cm, obstacle_x_norm, obstacle_frame_width_cm, debug
 
 
 def detect_line_geometry_canny(jpeg_bytes: bytes):
