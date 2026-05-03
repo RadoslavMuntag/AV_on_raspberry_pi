@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 
 from .config import PipelineConfig
 from ..contracts import PerceptionFrame, WorldState, SensorType
@@ -8,7 +9,10 @@ from ..contracts import PerceptionFrame, WorldState, SensorType
 class FusionModule:
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg: PipelineConfig = cfg or PipelineConfig()
-
+        # Initialize rolling window buffers for speed smoothing
+        self.left_speed_history: deque[float] = deque(maxlen=self.cfg.speed_window_size)
+        self.right_speed_history: deque[float] = deque(maxlen=self.cfg.speed_window_size)
+        
     def fuse(self, p: PerceptionFrame) -> WorldState:
         ts = time.monotonic()
         dist = p.ultrasonic_cm
@@ -22,6 +26,7 @@ class FusionModule:
         clearance_right = 1.0
         obstacle_too_wide = False
         obstacle_width_cm: float | None = None
+
 
         if ultrasonic_close and obs_w is not None:
             frame_width_cm = max(1e-6, float(frame_width_cm or self.cfg.obstacle_frame_width_cm))
@@ -50,6 +55,15 @@ class FusionModule:
         obstacle = ultrasonic_close
         stale = (ts - p.ts) > self.cfg.max_sensor_age_s
 
+        # Add current speeds to rolling window and compute smoothed averages
+        left_speed_raw = float(p.left_speed or 0.0)
+        right_speed_raw = float(p.right_speed or 0.0)
+        self.left_speed_history.append(left_speed_raw)
+        self.right_speed_history.append(right_speed_raw)
+        
+        left_speed_smoothed = sum(self.left_speed_history) / len(self.left_speed_history) if self.left_speed_history else 0.0
+        right_speed_smoothed = sum(self.right_speed_history) / len(self.right_speed_history) if self.right_speed_history else 0.0
+
         if self.cfg.DEBUG:
             print("DEBUG: Fusing perception into world state - obstacle:", obstacle, "distance:", dist, "stale:", stale)
 
@@ -65,8 +79,8 @@ class FusionModule:
             left_distance=float(p.left_distance or 0.0),
             right_distance=float(p.right_distance or 0.0),
 
-            left_speed=float(p.left_speed or 0.0),
-            right_speed=float(p.right_speed or 0.0),
+            left_speed=left_speed_smoothed,
+            right_speed=right_speed_smoothed,
 
             obstacle_width_cm=obstacle_width_cm,
             obstacle_clearance_left=clearance_left,

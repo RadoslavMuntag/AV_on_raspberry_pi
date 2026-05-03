@@ -50,6 +50,12 @@ class ModularPipeline:
         with self._config_lock:
             for f in fields(PipelineConfig):
                 setattr(self.config, f.name, getattr(loaded, f.name))
+                
+            self.controller.tune_pid(
+                kp=self.config.speed_kp,
+                ki=self.config.speed_ki,
+                kd=self.config.speed_kd
+            )
             return self.config
 
     def tick(

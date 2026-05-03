@@ -16,6 +16,9 @@ class MotorEncoder:
         self.ticks_per_revolution: int = ticks_per_revolution
         self.current_ticks: int = 0
         self.total_ticks: int = 0
+        self._last_speed = 0.0
+        self._dt_accumulation = 0.0
+        self._zero_ticks_counter = 0
 
 
         self.encoder.when_activated = self._update_ticks
@@ -44,8 +47,21 @@ class MotorEncoder:
             raise ValueError("dt must be > 0")
         
         distance = self.get_distance(wheel_circumference)
-        speed = distance / dt
+
+        self._dt_accumulation += dt
+        if self.current_ticks == 0:
+            self._zero_ticks_counter += 1
+            if self._zero_ticks_counter > 10:  # Adjust threshold as needed
+                self._dt_accumulation = 0.0 
+                self._last_speed = 0.0
+            return self._last_speed
+
+        self._zero_ticks_counter = 0
         self.reset()  # Reset ticks after calculating speed for the interval
+
+        speed = distance / self._dt_accumulation
+        self._dt_accumulation = 0.0  # Reset time accumulation after calculating speed
+        self._last_speed = speed
         return speed
 
     def close(self) -> None:

@@ -43,6 +43,7 @@ class PipelineConfig:
     camera_diag_fov_deg: float = 75.0
     obstacle_frame_width_cm: float = 30.0
     obstacle_max_passable_width_cm: float = 15.0
+    obstacle_adaptive_speed: bool = True
 
     # ------------------------------------------------------------------
     # line following parameters
@@ -61,6 +62,9 @@ class PipelineConfig:
     # ------------------------------------------------------------------
     # control parameters
     # ------------------------------------------------------------------
+
+    # Speed smoothing parameters
+    speed_window_size: int = 5  # number of past speed samples to average for smoothing
 
     # PID controller parameters
     speed_kp: float = 0.019

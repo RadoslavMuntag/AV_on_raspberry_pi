@@ -4,7 +4,7 @@ import time
 
 from backend.pipeline.config import PipelineConfig
 from backend.misc.PID import SpeedPIDController
-from backend.contracts import BehaviorState, ControlTargets, LedMode, ManualCommand, PlannerDecision, WorldState
+from backend.contracts import BehaviorState, ControlTargets, LedMode, ManualCommand, PlannerDecision, ObstacleAvoidPhase, WorldState
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
@@ -13,6 +13,8 @@ def _clamp(v: float, lo: float, hi: float) -> float:
 class DifferentialDriveController:
     def __init__(self, cfg: PipelineConfig | None = None) -> None:
         self.cfg: PipelineConfig = cfg or PipelineConfig()
+        self.last_state : BehaviorState = BehaviorState.IDLE
+        self.last_phase: ObstacleAvoidPhase | None = None
         
         self.left_pid: SpeedPIDController = SpeedPIDController(
             kp=self.cfg.speed_kp,
@@ -24,6 +26,10 @@ class DifferentialDriveController:
             ki=self.cfg.speed_ki,
             kd=self.cfg.speed_kd
         )
+
+    def tune_pid(self, kp: float | None = None, ki: float | None = None, kd: float | None = None) -> None:
+        self.left_pid.tune(kp, ki, kd)
+        self.right_pid.tune(kp, ki, kd)
 
     def _inverse_differential_kinematics(self, linear: float, angular: float) -> tuple[float, float]:
         vl = linear - angular * self.cfg.wheel_track / 2
@@ -54,6 +60,12 @@ class DifferentialDriveController:
         dt: float,
     ) -> ControlTargets:
         now = time.monotonic()
+        
+        if self.last_state != decision.state or decision.avoid_phase != self.last_phase:
+            self.left_pid.reset()
+            self.right_pid.reset()
+            self.last_state = decision.state
+            self.last_phase = decision.avoid_phase
 
         if decision.safe_stop or decision.state == BehaviorState.SAFE_STOP:
             # Stop immediately, blink red light to indicate E-stop
@@ -92,8 +104,6 @@ class DifferentialDriveController:
             #return ControlTargets(now, 0, 0, "blink", (255, 255, 0))
 
         if decision.state == BehaviorState.OBSTACLE_AVOID:
-            self.left_pid.reset()
-            self.right_pid.reset()
             left, right = self._mix(decision.desired_speed, decision.desired_turn)
             return ControlTargets(now, left, right, LedMode.INDEX, (255, 0, 255))
 
