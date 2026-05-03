@@ -60,6 +60,7 @@ class PerceptionModule:
                     obstacle_px_per_cm=self.cfg.obstacle_px_per_cm,
                     obstacle_distance_cm=ultrasonic,
                     camera_diag_fov_deg=self.cfg.camera_diag_fov_deg,
+                    threshold=self.cfg.line_threshold,
                 )
                 hardware.set_debug_frame(debug)
             except Exception as e:

@@ -51,6 +51,7 @@ class PipelineConfig:
     adaptive_speed: bool = False # whether to automatically reduce speed based on curvatre, this feature is experimental 
     cruise_speed: float = 23.0 # in cm/s
 
+    line_threshold: float = 100.0
     line_kp: float = 1.8
     line_angle_kp: float = 1.2
     line_curvature_speed_gain: float = 50.0
